@@ -1,0 +1,7 @@
+commit de38058342475de87d768deab702ae67dae879c7
+Author: Benny Prijono <bennylp@teluu.com>
+Date:   Wed Mar 15 19:32:41 2006 +0000
+
+    Added Null port, and changed conference so that it does not call port get_frame() when there is no listener on the port
+    
+    git-svn-id: https://svn.pjsip.org/repos/pjproject/trunk@318 74dad513-b988-da41-8d7b-12977e46ad98

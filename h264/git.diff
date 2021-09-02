@@ -1,0 +1,7 @@
+git checkout d91af57b3815a9ed92148df2e45f5d59a0c349e8
+
+git diff HEAD~ HEAD > h264.patch
+
+git diff HEAD~ HEAD --name-only > h264.1
+
+git diff HEAD~ HEAD --name-only | xargs zip update.zip

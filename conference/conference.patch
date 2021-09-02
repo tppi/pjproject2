@@ -1,0 +1,3379 @@
+diff --git a/pjmedia/build/pjmedia.dsp b/pjmedia/build/pjmedia.dsp
+index c9bea93..fc1e6d3 100644
+--- a/pjmedia/build/pjmedia.dsp
++++ b/pjmedia/build/pjmedia.dsp
+@@ -65,7 +65,7 @@ LIB32=link.exe -lib
+ # PROP Intermediate_Dir ".\output\pjmedia-i386-win32-vc6-debug"
+ # PROP Target_Dir ""
+ # ADD BASE CPP /nologo /W3 /Gm /GX /ZI /Od /D "WIN32" /D "_DEBUG" /D "_MBCS" /D "_LIB" /YX /FD /GZ /c
+-# ADD CPP /nologo /MTd /W4 /Gm /GX /ZI /Od /I "../include" /I "../../pjlib/include" /I "../../pjlib-util/include" /I "../src/pjmedia/portaudio" /D "_DEBUG" /D "PA_NO_ASIO" /D "WIN32" /D "_MBCS" /D "_LIB" /D PJ_WIN32=1 /D PJ_M_I386=1 /FR /FD /GZ /c
++# ADD CPP /nologo /MTd /W4 /Gm /GX /ZI /Od /I "../include" /I "../../pjlib/include" /I "../../pjlib-util/include" /I "../src/pjmedia/portaudio" /D "_DEBUG" /D "PA_NO_ASIO" /D "PA_NO_WIN_DS" /D "WIN32" /D "_MBCS" /D "_LIB" /D PJ_WIN32=1 /D PJ_M_I386=1 /FR /FD /GZ /c
+ # SUBTRACT CPP /YX
+ # ADD BASE RSC /l 0x409 /d "_DEBUG"
+ # ADD RSC /l 0x409 /d "_DEBUG"
+@@ -87,11 +87,11 @@ LIB32=link.exe -lib
+ # PROP Default_Filter "cpp;c;cxx;rc;def;r;odl;idl;hpj;bat"
+ # Begin Source File
+ 
+-SOURCE=..\src\pjmedia\audio_conf.c
++SOURCE=..\src\pjmedia\codec.c
+ # End Source File
+ # Begin Source File
+ 
+-SOURCE=..\src\pjmedia\codec.c
++SOURCE=..\src\pjmedia\conference.c
+ # End Source File
+ # Begin Source File
+ 
+@@ -125,6 +125,10 @@ SOURCE=..\src\pjmedia\pasound.c
+ # End Source File
+ # Begin Source File
+ 
++SOURCE=..\src\pjmedia\port.c
++# End Source File
++# Begin Source File
++
+ SOURCE=..\src\pjmedia\rtcp.c
+ # End Source File
+ # Begin Source File
+@@ -133,6 +137,10 @@ SOURCE=..\src\pjmedia\rtp.c
+ # End Source File
+ # Begin Source File
+ 
++SOURCE=..\src\pjmedia\rtp_port.c
++# End Source File
++# Begin Source File
++
+ SOURCE=..\src\pjmedia\sdp.c
+ # End Source File
+ # Begin Source File
+@@ -161,11 +169,11 @@ SOURCE=..\src\pjmedia\vad.c
+ # PROP Default_Filter "h;hpp;hxx;hm;inl"
+ # Begin Source File
+ 
+-SOURCE=..\include\pjmedia\audio_conf.h
++SOURCE=..\include\pjmedia\codec.h
+ # End Source File
+ # Begin Source File
+ 
+-SOURCE=..\include\pjmedia\codec.h
++SOURCE=..\include\pjmedia\conference.h
+ # End Source File
+ # Begin Source File
+ 
+@@ -193,6 +201,10 @@ SOURCE=..\include\pjmedia.h
+ # End Source File
+ # Begin Source File
+ 
++SOURCE=..\include\pjmedia\port.h
++# End Source File
++# Begin Source File
++
+ SOURCE=..\include\pjmedia\rtcp.h
+ # End Source File
+ # Begin Source File
+@@ -201,6 +213,10 @@ SOURCE=..\include\pjmedia\rtp.h
+ # End Source File
+ # Begin Source File
+ 
++SOURCE=..\include\pjmedia\rtp_port.h
++# End Source File
++# Begin Source File
++
+ SOURCE=..\include\pjmedia\sdp.h
+ # End Source File
+ # Begin Source File
+diff --git a/pjmedia/include/pjmedia.h b/pjmedia/include/pjmedia.h
+index 31f06be..66ba4e0 100644
+--- a/pjmedia/include/pjmedia.h
++++ b/pjmedia/include/pjmedia.h
+@@ -25,16 +25,18 @@
+  */
+ 
+ #include <pjmedia/types.h>
+-#include <pjmedia/errno.h>
+ #include <pjmedia/codec.h>
+-#include <pjmedia/jbuf.h>
++#include <pjmedia/conference.h>
+ #include <pjmedia/endpoint.h>
++#include <pjmedia/errno.h>
++#include <pjmedia/jbuf.h>
++#include <pjmedia/port.h>
+ #include <pjmedia/rtcp.h>
+ #include <pjmedia/rtp.h>
+-#include <pjmedia/session.h>
+-#include <pjmedia/sound.h>
+ #include <pjmedia/sdp.h>
+ #include <pjmedia/sdp_neg.h>
++#include <pjmedia/session.h>
++#include <pjmedia/sound.h>
+ 
+ #endif	/* __PJMEDIA_H__ */
+ 
+diff --git a/pjmedia/include/pjmedia/audio_conf.h b/pjmedia/include/pjmedia/audio_conf.h
+deleted file mode 100644
+index 0131ac4..0000000
+--- a/pjmedia/include/pjmedia/audio_conf.h
++++ /dev/null
+@@ -1,78 +0,0 @@
+-/* $Id$ */
+-/* 
+- * Copyright (C) 2003-2006 Benny Prijono <benny@prijono.org>
+- *
+- * This program is free software; you can redistribute it and/or modify
+- * it under the terms of the GNU General Public License as published by
+- * the Free Software Foundation; either version 2 of the License, or
+- * (at your option) any later version.
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License
+- * along with this program; if not, write to the Free Software
+- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA 
+- */
+-#ifndef __PJMEDIA_CONF_H__
+-#define __PJMEDIA_CONF_H__
+-
+-
+-/**
+- * @file conf.h
+- * @brief Conference bridge.
+- */
+-#include <pjmedia/types.h>
+-
+-/**
+- * Opaque type for conference bridge.
+- */
+-typedef struct pjmedia_conf pjmedia_conf;
+-
+-
+-/**
+- * Create conference bridge.
+- */
+-PJ_DECL(pj_status_t) pjmedia_conf_create( pj_pool_t *pool,
+-					  unsigned max_ports,
+-					  pjmedia_conf **p_conf );
+-
+-
+-/**
+- * Add stream port to the conference bridge.
+- */
+-PJ_DECL(pj_status_t) pjmedia_conf_add_port( pjmedia_conf *conf,
+-					    pj_pool_t *pool,
+-					    pjmedia_stream_port *strm_port,
+-					    const pj_str_t *port_name,
+-					    unsigned *p_port );
+-
+-
+-/**
+- * Mute or unmute port.
+- */
+-PJ_DECL(pj_status_t) pjmedia_conf_set_mute( pjmedia_conf *conf,
+-					    unsigned port,
+-					    pj_bool_t mute );
+-
+-
+-/**
+- * Set the specified port to be member of conference bridge.
+- */
+-PJ_DECL(pj_status_t) pjmedia_conf_set_membership( pjmedia_conf *conf,
+-						  unsigned port,
+-						  pj_bool_t enabled );
+-
+-
+-/**
+- * Remove the specified port.
+- */
+-PJ_DECL(pj_status_t) pjmedia_conf_remove_port( pjmedia_conf *conf,
+-					       unsigned port );
+-
+-
+-
+-#endif	/* __PJMEDIA_CONF_H__ */
+-
+diff --git a/pjmedia/include/pjmedia/codec.h b/pjmedia/include/pjmedia/codec.h
+index 1da3273..c308c57 100644
+--- a/pjmedia/include/pjmedia/codec.h
++++ b/pjmedia/include/pjmedia/codec.h
+@@ -119,26 +119,6 @@ struct pjmedia_codec_param
+ };
+ 
+ 
+-/** 
+- * Types of media frame. 
+- */
+-enum pjmedia_frame_type
+-{
+-    PJMEDIA_FRAME_TYPE_SILENCE_AUDIO,	/**< Silence audio frame.	*/
+-    PJMEDIA_FRAME_TYPE_AUDIO,		/**< Normal audio frame.	*/
+-
+-};
+-
+-/** 
+- * This structure describes a media frame. 
+- */
+-struct pjmedia_frame
+-{
+-    pjmedia_frame_type	 type;	/**< Frame type.		    */
+-    void		*buf;	/**< Pointer to buffer.		    */
+-    pj_size_t		 size;	/**< Frame size in bytes.	    */
+-};
+-
+ /**
+  * This structure describes codec operations. Each codec MUST implement
+  * all of these functions.
+diff --git a/pjmedia/include/pjmedia/conference.h b/pjmedia/include/pjmedia/conference.h
+new file mode 100644
+index 0000000..ffa4437
+--- /dev/null
++++ b/pjmedia/include/pjmedia/conference.h
+@@ -0,0 +1,163 @@
++/* $Id$ */
++/* 
++ * Copyright (C) 2003-2006 Benny Prijono <benny@prijono.org>
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA 
++ */
++#ifndef __PJMEDIA_CONF_H__
++#define __PJMEDIA_CONF_H__
++
++
++/**
++ * @file conference.h
++ * @brief Conference bridge.
++ */
++#include <pjmedia/port.h>
++
++
++PJ_BEGIN_DECL
++
++
++/**
++ * Opaque type for conference bridge.
++ */
++typedef struct pjmedia_conf pjmedia_conf;
++
++/**
++ * Conference port info.
++ */
++typedef struct pjmedia_conf_port_info
++{
++    pj_str_t		name;
++    pjmedia_port_op	tx_setting;
++    pjmedia_port_op	rx_setting;
++    pj_bool_t	       *listener;
++} pjmedia_conf_port_info;
++
++
++/**
++ * Create conference bridge.
++ */
++PJ_DECL(pj_status_t) pjmedia_conf_create( pj_pool_t *pool,
++					  unsigned max_slots,
++					  unsigned sampling_rate,
++					  unsigned samples_per_frame,
++					  unsigned bits_per_sample,
++					  pjmedia_conf **p_conf );
++
++
++/**
++ * Destroy conference bridge.
++ */
++PJ_DECL(pj_status_t) pjmedia_conf_destroy( pjmedia_conf *conf );
++
++
++/**
++ * Add stream port to the conference bridge. By default, the new conference
++ * port will have both TX and RX enabled, but it is not connected to any
++ * other ports.
++ *
++ * Application SHOULD call #pjmedia_conf_connect_port() to enable audio
++ * transmission and receipt to/from this port.
++ *
++ * @param conf		The conference bridge.
++ * @param pool		Pool to allocate buffers for this port.
++ * @param strm_port	Stream port interface.
++ * @param name		Port name.
++ * @param p_slot	Pointer to receive the slot index of the port in
++ *			the conference bridge.
++ *
++ * @return		PJ_SUCCESS on success.
++ */
++PJ_DECL(pj_status_t) pjmedia_conf_add_port( pjmedia_conf *conf,
++					    pj_pool_t *pool,
++					    pjmedia_port *strm_port,
++					    const pj_str_t *name,
++					    unsigned *p_slot );
++
++
++
++/**
++ * Change TX and RX settings for the port.
++ *
++ * @param conf		The conference bridge.
++ * @param slot		Port number/slot in the conference bridge.
++ * @param tx		Settings for the transmission TO this port.
++ * @param rx		Settings for the receipt FROM this port.
++ *
++ * @return		PJ_SUCCESS on success.
++ */
++PJ_DECL(pj_status_t) pjmedia_conf_configure_port( pjmedia_conf *conf,
++						  unsigned slot,
++						  pjmedia_port_op tx,
++						  pjmedia_port_op rx);
++
++
++/**
++ * Enable unidirectional audio from the specified source slot to the
++ * specified sink slot.
++ *
++ * @param conf		The conference bridge.
++ * @param src_slot	Source slot.
++ * @param sink_slot	Sink slot.
++ *
++ * @return		PJ_SUCCES on success.
++ */
++PJ_DECL(pj_status_t) pjmedia_conf_connect_port( pjmedia_conf *conf,
++						unsigned src_slot,
++						unsigned sink_slot );
++
++
++/**
++ * Disconnect unidirectional audio from the specified source to the specified
++ * sink slot.
++ *
++ * @param conf		The conference bridge.
++ * @param src_slot	Source slot.
++ * @param sink_slot	Sink slot.
++ *
++ * @reutrn		PJ_SUCCESS on success.
++ */
++PJ_DECL(pj_status_t) pjmedia_conf_disconnect_port( pjmedia_conf *conf,
++						   unsigned src_slot,
++						   unsigned sink_slot );
++
++
++/**
++ * Remove the specified port from the conference bridge.
++ *
++ * @param conf		The conference bridge.
++ * @param slot		The port index to be removed.
++ *
++ * @return		PJ_SUCCESS on success.
++ */
++PJ_DECL(pj_status_t) pjmedia_conf_remove_port( pjmedia_conf *conf,
++					       unsigned slot );
++
++
++
++/**
++ * Get port info.
++ */
++PJ_DECL(pj_status_t) pjmedia_conf_get_port_info( pjmedia_conf *conf,
++						 unsigned slot,
++						 pjmedia_conf_port_info *info);
++
++
++PJ_END_DECL
++
++
++#endif	/* __PJMEDIA_CONF_H__ */
++
+diff --git a/pjmedia/include/pjmedia/errno.h b/pjmedia/include/pjmedia/errno.h
+index 5a90537..708f5e0 100644
+--- a/pjmedia/include/pjmedia/errno.h
++++ b/pjmedia/include/pjmedia/errno.h
+@@ -344,6 +344,16 @@ PJ_BEGIN_DECL
+  * Bad RTP sequence number
+  */
+ #define PJMEDIA_RTP_EBADSEQ	    (PJMEDIA_ERRNO_START+132)    /* 220132 */
++/**
++ * @hideinitializer
++ * RTP media port destination is not configured
++ */
++#define PJMEDIA_RTP_EBADDEST	    (PJMEDIA_ERRNO_START+133)    /* 220133 */
++/**
++ * @hideinitializer
++ * RTP is not configured.
++ */
++#define PJMEDIA_RTP_ENOCONFIG	    (PJMEDIA_ERRNO_START+134)    /* 220134 */
+ 
+ 
+ /************************************************************
+@@ -351,6 +361,42 @@ PJ_BEGIN_DECL
+  ***********************************************************/
+ 
+ 
++/************************************************************
++ * PORT ERRORS
++ ***********************************************************/
++/**
++ * @hideinitializer
++ * Generic incompatible port error.
++ */
++#define PJMEDIA_ENOTCOMPATIBLE	    (PJMEDIA_ERRNO_START+160)    /* 220160 */
++/**
++ * @hideinitializer
++ * Incompatible clock rate
++ */
++#define PJMEDIA_ENCCLOCKRATE	    (PJMEDIA_ERRNO_START+161)    /* 220161 */
++/**
++ * @hideinitializer
++ * Incompatible samples per frame
++ */
++#define PJMEDIA_ENCSAMPLESPFRAME    (PJMEDIA_ERRNO_START+162)    /* 220162 */
++/**
++ * @hideinitializer
++ * Incompatible media type
++ */
++#define PJMEDIA_ENCTYPE		    (PJMEDIA_ERRNO_START+163)    /* 220163 */
++/**
++ * @hideinitializer
++ * Incompatible bits per sample
++ */
++#define PJMEDIA_ENCBITS		    (PJMEDIA_ERRNO_START+164)    /* 220164 */
++/**
++ * @hideinitializer
++ * Incompatible bytes per frame
++ */
++#define PJMEDIA_ENCBYTES	    (PJMEDIA_ERRNO_START+165)    /* 220165 */
++
++
++
+ PJ_END_DECL
+ 
+ #endif	/* __PJMEDIA_ERRNO_H__ */
+diff --git a/pjmedia/include/pjmedia/port.h b/pjmedia/include/pjmedia/port.h
+new file mode 100644
+index 0000000..5437061
+--- /dev/null
++++ b/pjmedia/include/pjmedia/port.h
+@@ -0,0 +1,210 @@
++/* $Id$ */
++/* 
++ * Copyright (C) 2003-2006 Benny Prijono <benny@prijono.org>
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA 
++ */
++#ifndef __PJMEDIA_PORT_H__
++#define __PJMEDIA_PORT_H__
++
++/**
++ * @file port.h
++ * @brief Port interface declaration
++ */
++#include <pjmedia/types.h>
++#include <pj/os.h>
++
++
++PJ_BEGIN_DECL
++
++
++/**
++ * Port operation setting.
++ */
++enum pjmedia_port_op
++{
++    /** 
++     * No change to the port TX or RX settings.
++     */
++    PJMEDIA_PORT_NO_CHANGE,
++
++    /**
++     * TX or RX is disabled from the port. It means get_frame() or
++     * put_frame() WILL NOT be called for this port.
++     */
++    PJMEDIA_PORT_DISABLE,
++
++    /**
++     * TX or RX is muted, which means that get_frame() or put_frame()
++     * will still be called, but the audio frame is discarded.
++     */
++    PJMEDIA_PORT_MUTE,
++
++    /**
++     * Enable TX and RX to/from this port.
++     */
++    PJMEDIA_PORT_ENABLE,
++};
++
++
++/**
++ * @see pjmedia_port_op
++ */
++typedef enum pjmedia_port_op pjmedia_port_op;
++
++
++/**
++ * Port info.
++ */
++struct pjmedia_port_info
++{
++    pj_str_t	    name;		/**< Port name.			    */
++    pj_uint32_t	    signature;		/**< Port signature.		    */
++    pjmedia_type    type;		/**< Media type.		    */
++    pj_bool_t	    has_info;		/**< Has info?			    */
++    pj_bool_t	    need_info;		/**< Need info on connect?	    */
++    unsigned	    pt;			/**< Payload type (can be dynamic). */
++    pj_str_t	    encoding_name;	/**< Encoding name.		    */
++    unsigned	    sample_rate;	/**< Sampling rate.		    */
++    unsigned	    bits_per_sample;	/**< Bits/sample		    */
++    unsigned	    samples_per_frame;	/**< No of samples per frame.	    */
++    unsigned	    bytes_per_frame;	/**< No of samples per frame.	    */
++};
++
++/**
++ * @see pjmedia_port_info
++ */
++typedef struct pjmedia_port_info pjmedia_port_info;
++
++
++/** 
++ * Types of media frame. 
++ */
++enum pjmedia_frame_type
++{
++    PJMEDIA_FRAME_TYPE_NONE,	    /**< No frame.		*/
++    PJMEDIA_FRAME_TYPE_CNG,	    /**< Silence audio frame.	*/
++    PJMEDIA_FRAME_TYPE_AUDIO,	    /**< Normal audio frame.	*/
++
++};
++
++/** 
++ * This structure describes a media frame. 
++ */
++struct pjmedia_frame
++{
++    pjmedia_frame_type	 type;	    /**< Frame type.		    */
++    void		*buf;	    /**< Pointer to buffer.	    */
++    pj_size_t		 size;	    /**< Frame size in bytes.	    */
++    pj_timestamp	 timestamp; /**< Frame timestamp.	    */
++};
++
++/**
++ * For future graph.
++ */
++typedef struct pjmedia_graph pjmedia_graph;
++
++
++/**
++ * @see pjmedia_port
++ */
++typedef struct pjmedia_port pjmedia_port;
++
++/**
++ * Port interface.
++ */
++struct pjmedia_port
++{
++    pjmedia_port_info	 info;
++    pjmedia_graph	*graph;
++    pjmedia_port	*upstream_port;
++    pjmedia_port	*downstream_port;
++    void		*user_data;
++
++    /**
++     * Called when this port is connected to an upstream port.
++     */
++    pj_status_t (*on_upstream_connect)(pj_pool_t *pool,
++				       pjmedia_port *this_port,
++				       pjmedia_port *upstream);
++
++    /**
++     * Called when this port is connected to a downstream port.
++     */
++    pj_status_t (*on_downstream_connect)(pj_pool_t *pool,
++					 pjmedia_port *this_port,
++				         pjmedia_port *upstream);
++
++    /**
++     * Sink interface. 
++     * This should only be called by #pjmedia_port_put_frame().
++     */
++    pj_status_t (*put_frame)(pjmedia_port *this_port, 
++			     const pjmedia_frame *frame);
++
++    /**
++     * Source interface. 
++     * This should only be called by #pjmedia_port_get_frame().
++     */
++    pj_status_t (*get_frame)(pjmedia_port *this_port, 
++			     pjmedia_frame *frame);
++
++    /**
++     * Called to destroy this port.
++     */
++    pj_status_t (*on_destroy)(pjmedia_port *this_port);
++};
++
++
++
++/**
++ * Connect two ports.
++ */
++PJ_DECL(pj_status_t) pjmedia_port_connect( pj_pool_t *pool,
++					   pjmedia_port *upstream_port,
++					   pjmedia_port *downstream_port);
++
++/**
++ * Disconnect ports.
++ */
++PJ_DECL(pj_status_t) pjmedia_port_disconnect( pjmedia_port *upstream_port,
++					      pjmedia_port *downstream_port);
++
++
++/**
++ * Get a frame from the port (and subsequent downstream ports).
++ */
++PJ_DECL(pj_status_t) pjmedia_port_get_frame( pjmedia_port *port,
++					     pjmedia_frame *frame );
++
++/**
++ * Put a frame to the port (and subsequent downstream ports).
++ */
++PJ_DECL(pj_status_t) pjmedia_port_put_frame( pjmedia_port *port,
++					     const pjmedia_frame *frame );
++
++
++/**
++ * Destroy port (and subsequent downstream ports)
++ */
++PJ_DECL(pj_status_t) pjmedia_port_destroy( pjmedia_port *port );
++
++
++
++PJ_END_DECL
++
++
++#endif	/* __PJMEDIA_PORT_H__ */
++
+diff --git a/pjmedia/include/pjmedia/rtp.h b/pjmedia/include/pjmedia/rtp.h
+index 409ad0a..3afc130 100644
+--- a/pjmedia/include/pjmedia/rtp.h
++++ b/pjmedia/include/pjmedia/rtp.h
+@@ -69,6 +69,9 @@ PJ_BEGIN_DECL
+  *
+  */
+ 
++#ifdef _MSC_VER
++#   pragma warning(disable:4214)    // bit field types other than int
++#endif
+ 
+ 
+ /**
+diff --git a/pjmedia/include/pjmedia/rtp_port.h b/pjmedia/include/pjmedia/rtp_port.h
+new file mode 100644
+index 0000000..7bb93cb
+--- /dev/null
++++ b/pjmedia/include/pjmedia/rtp_port.h
+@@ -0,0 +1,53 @@
++/* $Id$ */
++/* 
++ * Copyright (C) 2003-2006 Benny Prijono <benny@prijono.org>
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA 
++ */
++#ifndef __PJMEDIA_RTP_PORT_H__
++#define __PJMEDIA_RTP_PORT_H__
++
++
++/**
++ * @file rtp_port.h
++ * @brief RTP media port.
++ */
++#include <pjmedia/port.h>
++
++
++PJ_BEGIN_DECL
++
++
++/**
++ * Create RTP port.
++ */
++PJ_DECL(pj_status_t) pjmedia_rtp_port_create(pj_pool_t *pool,
++					     pjmedia_sock_info *sock_info,
++					     pjmedia_port **p_port);
++
++
++/**
++ * Set RTP destination info.
++ */
++PJ_DECL(pj_status_t) pjmedia_rtp_port_configure(pjmedia_port *rtp,
++						const pj_sockaddr_in *rem_rtp,
++						const pj_sockaddr_in *rem_rtcp);
++
++
++
++PJ_END_DECL
++
++
++#endif	/* __PJMEDIA_RTP_PORT_H__ */
+diff --git a/pjmedia/include/pjmedia/session.h b/pjmedia/include/pjmedia/session.h
+index 4d36762..78d699f 100644
+--- a/pjmedia/include/pjmedia/session.h
++++ b/pjmedia/include/pjmedia/session.h
+@@ -175,6 +175,14 @@ pjmedia_session_enum_streams( const pjmedia_session *session,
+ 
+ 
+ /**
++ * Get the port interface for the specified stream.
++ */
++PJ_DECL(pj_status_t) pjmedia_session_get_port( pjmedia_session *session,
++					       unsigned index,
++					       pjmedia_port **p_port);
++
++
++/**
+  * Get session statistics. The stream statistic shows various
+  * indicators such as packet count, packet lost, jitter, delay, etc.
+  *
+diff --git a/pjmedia/include/pjmedia/stream.h b/pjmedia/include/pjmedia/stream.h
+index 57bbe63..52b8008 100644
+--- a/pjmedia/include/pjmedia/stream.h
++++ b/pjmedia/include/pjmedia/stream.h
+@@ -28,6 +28,7 @@
+ #include <pjmedia/sound.h>
+ #include <pjmedia/codec.h>
+ #include <pjmedia/endpoint.h>
++#include <pjmedia/port.h>
+ #include <pj/sock.h>
+ 
+ PJ_BEGIN_DECL
+@@ -97,22 +98,6 @@ struct pjmedia_stream_stat
+ };
+ 
+ 
+-/**
+- * Stream ports.
+- */
+-struct pjmedia_stream_port
+-{
+-    /**
+-     * Sink port.
+-     */
+-    pj_status_t (*put_frame)(const pj_int16_t *frame, pj_size_t frame_cnt);
+-
+-    /**
+-     * Source port.
+-     */
+-    pj_status_t (*get_frame)(pj_int16_t *frame, pj_size_t frame_cnt);
+-};
+-
+ 
+ /**
+  * Create a media stream based on the specified stream parameter.
+@@ -142,6 +127,18 @@ PJ_DECL(pj_status_t) pjmedia_stream_create(pjmedia_endpt *endpt,
+ PJ_DECL(pj_status_t) pjmedia_stream_destroy(pjmedia_stream *stream);
+ 
+ /**
++ * Get the port interface of the stream.
++ *
++ * @param stream	The media stream.
++ * @param p_port	Pointer to receive the port interface.
++ *
++ * @return		PJ_SUCCESS on success.
++ */
++PJ_DECL(pj_status_t) pjmedia_stream_get_port(pjmedia_stream *stream,
++					     pjmedia_port **p_port );
++
++
++/**
+  * Start the media stream. This will start the appropriate channels
+  * in the media stream, depending on the media direction that was set
+  * when the stream was created.
+diff --git a/pjmedia/include/pjmedia/types.h b/pjmedia/include/pjmedia/types.h
+index 7f1a106..b0bda7e 100644
+--- a/pjmedia/include/pjmedia/types.h
++++ b/pjmedia/include/pjmedia/types.h
+@@ -151,11 +151,6 @@ typedef struct pjmedia_stream_info pjmedia_stream_info;
+ typedef struct pjmedia_stream_stat pjmedia_stream_stat;
+ 
+ /**
+- * @see pjmedia_stream_port
+- */
+-typedef struct pjmedia_stream_port pjmedia_stream_port;
+-
+-/**
+  * Typedef for media stream.
+  */
+ typedef struct pjmedia_stream pjmedia_stream;
+diff --git a/pjmedia/src/pjmedia-codec/gsm.c b/pjmedia/src/pjmedia-codec/gsm.c
+index 3ef6dac..fa14873 100644
+--- a/pjmedia/src/pjmedia-codec/gsm.c
++++ b/pjmedia/src/pjmedia-codec/gsm.c
+@@ -20,6 +20,7 @@
+ #include <pjmedia/codec.h>
+ #include <pjmedia/errno.h>
+ #include <pjmedia/endpoint.h>
++#include <pjmedia/port.h>
+ #include <pj/assert.h>
+ #include <pj/pool.h>
+ #include <pj/string.h>
+diff --git a/pjmedia/src/pjmedia/audio_conf.c b/pjmedia/src/pjmedia/audio_conf.c
+deleted file mode 100644
+index 45c3faf..0000000
+--- a/pjmedia/src/pjmedia/audio_conf.c
++++ /dev/null
+@@ -1,405 +0,0 @@
+-/* $Id$ */
+-/* 
+- * Copyright (C) 2003-2006 Benny Prijono <benny@prijono.org>
+- *
+- * This program is free software; you can redistribute it and/or modify
+- * it under the terms of the GNU General Public License as published by
+- * the Free Software Foundation; either version 2 of the License, or
+- * (at your option) any later version.
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License
+- * along with this program; if not, write to the Free Software
+- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA 
+- */
+-#include <pjmedia/audio_conf.h>
+-#include <pjmedia/vad.h>
+-#include <pjmedia/stream.h>
+-#include <pjmedia/sound.h>
+-#include <pjmedia/errno.h>
+-#include <pj/assert.h>
+-#include <pj/log.h>
+-#include <pj/pool.h>
+-#include <pj/string.h>
+-
+-
+-
+-#define THIS_FILE   "audio_conf.c"
+-
+-
+-struct conf_port
+-{
+-    pj_str_t		 name;
+-    pjmedia_stream_port	*port;
+-    pj_bool_t		 online;
+-    pj_bool_t		 is_member;
+-    pjmedia_vad		*vad;
+-    pj_int32_t		 level;
+-};
+-
+-/*
+- * Conference bridge.
+- */
+-struct pjmedia_conf
+-{
+-    unsigned		  max_ports;	/**< Maximum ports.		*/
+-    unsigned		  port_cnt;	/**< Current number of ports.	*/
+-    pj_snd_stream	 *snd_rec;	/**< Sound recorder stream.	*/
+-    pj_snd_stream	 *snd_player;	/**< Sound player stream.	*/
+-    struct conf_port	**port;		/**< Array of ports.		*/
+-    pj_int16_t		 *rec_buf;	/**< Sample buffer for rec.	*/
+-    pj_int16_t		 *play_buf;	/**< Sample buffer for player	*/
+-    unsigned		  samples_cnt;	/**< Samples per frame.		*/
+-    pj_size_t		  buf_size;	/**< Buffer size, in bytes.	*/
+-};
+-
+-
+-/* Prototypes */
+-static pj_status_t play_cb( /* in */  void *user_data,
+-			    /* in */  pj_uint32_t timestamp,
+-			    /* out */ void *output,
+-			    /* out */ unsigned size);
+-static pj_status_t rec_cb(  /* in */  void *user_data,
+-			    /* in */  pj_uint32_t timestamp,
+-			    /* in */  const void *input,
+-			    /* in*/   unsigned size);
+-
+-
+-/*
+- * Create conference bridge.
+- */
+-PJ_DEF(pj_status_t) pjmedia_conf_create( pj_pool_t *pool,
+-					 unsigned max_ports,
+-					 pjmedia_conf **p_conf )
+-{
+-    pjmedia_conf *conf;
+-    pj_snd_stream_info snd_info;
+-    pj_status_t status;
+-
+-    conf = pj_pool_zalloc(pool, sizeof(pjmedia_conf));
+-    conf->max_ports = max_ports;
+-    conf->port = pj_pool_zalloc(pool, max_ports*sizeof(void*));
+-
+-    /* Create default parameters. */
+-    pj_memset(&snd_info, 0, sizeof(snd_info));
+-    snd_info.samples_per_sec = 8000;
+-    snd_info.bits_per_sample = 16;
+-    snd_info.samples_per_frame = 160;
+-    snd_info.bytes_per_frame = 16000;
+-    snd_info.frames_per_packet = 1;
+-
+-    /* Create buffers. */
+-    conf->samples_cnt = snd_info.samples_per_frame;
+-    conf->buf_size = snd_info.samples_per_frame * snd_info.bits_per_sample / 8;
+-    conf->rec_buf = pj_pool_alloc(pool,  conf->buf_size);
+-    conf->play_buf = pj_pool_alloc(pool, conf->buf_size );
+-
+-
+-    /* Open recorder. */
+-    conf->snd_rec = pj_snd_open_recorder(-1 ,&snd_info, &rec_cb, conf);
+-    if (conf->snd_rec == NULL) {
+-	status = -1;
+-	goto on_error;
+-    }
+-
+-    /* Open player */
+-    conf->snd_player = pj_snd_open_player(-1, &snd_info, &play_cb, conf);
+-    if (conf->snd_player == NULL) {
+-	status = -1;
+-	goto on_error;
+-    }
+-
+-    /* Done */
+-
+-    *p_conf = conf;
+-
+-    return PJ_SUCCESS;
+-
+-
+-on_error:
+-    if (conf->snd_rec) {
+-	pj_snd_stream_stop(conf->snd_rec);
+-	pj_snd_stream_close(conf->snd_rec);
+-	conf->snd_rec = NULL;
+-    }
+-    if (conf->snd_player) {
+-	pj_snd_stream_stop(conf->snd_player);
+-	pj_snd_stream_close(conf->snd_player);
+-	conf->snd_player = NULL;
+-    }
+-    return status;
+-}
+-
+-/*
+- * Activate sound device.
+- */
+-static pj_status_t activate_conf( pjmedia_conf *conf )
+-{
+-    char errmsg[PJ_ERR_MSG_SIZE];
+-    pj_status_t status;
+-
+-    /* Start recorder. */
+-    status = pj_snd_stream_start(conf->snd_rec);
+-    if (status != PJ_SUCCESS)
+-	goto on_error;
+-
+-    /* Start player. */
+-    status = pj_snd_stream_start(conf->snd_rec);
+-    if (status != PJ_SUCCESS)
+-	goto on_error;
+-
+-    return PJ_SUCCESS;
+-
+-on_error:
+-    pj_strerror(status, errmsg, sizeof(errmsg));
+-    PJ_LOG(4,(THIS_FILE, "Error starting sound player/recorder: %s",
+-	      errmsg));
+-    return status;
+-}
+-
+-
+-/*
+- * Suspend sound device
+- */
+-static void suspend_conf( pjmedia_conf *conf )
+-{
+-    pj_snd_stream_stop(conf->snd_rec);
+-    pj_snd_stream_stop(conf->snd_player);
+-}
+-
+-
+-/*
+- * Add stream port to the conference bridge.
+- */
+-PJ_DEF(pj_status_t) pjmedia_conf_add_port( pjmedia_conf *conf,
+-					   pj_pool_t *pool,
+-					   pjmedia_stream_port *strm_port,
+-					   const pj_str_t *port_name,
+-					   unsigned *p_port )
+-{
+-    struct conf_port *conf_port;
+-    unsigned index;
+-    pj_status_t status;
+-
+-    PJ_ASSERT_RETURN(conf && pool && strm_port && port_name && p_port, 
+-		     PJ_EINVAL);
+-
+-    if (conf->port_cnt >= conf->max_ports) {
+-	pj_assert(!"Too many ports");
+-	return PJ_ETOOMANY;
+-    }
+-
+-    /* Create port structure. */
+-    conf_port = pj_pool_zalloc(pool, sizeof(struct conf_port));
+-    pj_strdup_with_null(pool, &conf_port->name, port_name);
+-    conf_port->port = strm_port;
+-    conf_port->online = PJ_TRUE;
+-    conf_port->level = 0;
+-
+-    /* Create VAD for this port. */
+-    status = pjmedia_vad_create(pool, &conf_port->vad);
+-    if (status != PJ_SUCCESS)
+-	return status;
+-
+-    /* Set vad settings. */
+-    pjmedia_vad_set_adaptive(conf_port->vad, conf->samples_cnt);
+-
+-    /* Find empty port in the conference bridge. */
+-    for (index=0; index < conf->max_ports; ++index) {
+-	if (conf->port[index] == NULL)
+-	    break;
+-    }
+-
+-    pj_assert(index != conf->max_ports);
+-
+-    /* Put the port. */
+-    conf->port[index] = conf_port;
+-    conf->port_cnt++;
+-
+-    /* If this is the first port, activate sound device. */
+-    if (conf->port_cnt == 1) {
+-	status = activate_conf(conf);;
+-	if (status != PJ_SUCCESS) {
+-	    conf->port[index] = NULL;
+-	    --conf->port_cnt;
+-	    return status;
+-	}
+-    }
+-
+-    /* Done. */
+-    return PJ_SUCCESS;
+-}
+-
+-
+-/*
+- * Mute or unmute port.
+- */
+-PJ_DEF(pj_status_t) pjmedia_conf_set_mute( pjmedia_conf *conf,
+-					   unsigned port,
+-					   pj_bool_t mute )
+-{
+-    /* Check arguments */
+-    PJ_ASSERT_RETURN(conf && port < conf->max_ports, PJ_EINVAL);
+-
+-    /* Port must be valid. */
+-    PJ_ASSERT_RETURN(conf->port[port] != NULL, PJ_EINVAL);
+-
+-    conf->port[port]->online = !mute;
+-    
+-    return PJ_SUCCESS;
+-}
+-
+-
+-/*
+- * Set the specified port to be member of conference bridge.
+- */
+-PJ_DEF(pj_status_t) pjmedia_conf_set_membership( pjmedia_conf *conf,
+-						 unsigned port,
+-						 pj_bool_t enabled )
+-{
+-    /* Check arguments */
+-    PJ_ASSERT_RETURN(conf && port < conf->max_ports, PJ_EINVAL);
+-
+-    /* Port must be valid. */
+-    PJ_ASSERT_RETURN(conf->port[port] != NULL, PJ_EINVAL);
+-
+-    conf->port[port]->is_member = enabled;
+-    
+-    return PJ_SUCCESS;
+-}
+-
+-
+-/*
+- * Remove the specified port.
+- */
+-PJ_DEF(pj_status_t) pjmedia_conf_remove_port( pjmedia_conf *conf,
+-					      unsigned port )
+-{
+-    /* Check arguments */
+-    PJ_ASSERT_RETURN(conf && port < conf->max_ports, PJ_EINVAL);
+-
+-    /* Port must be valid. */
+-    PJ_ASSERT_RETURN(conf->port[port] != NULL, PJ_EINVAL);
+-
+-    /* Suspend the sound devices.
+-     * Don't want to remove port while port is being accessed by sound
+-     * device's threads.
+-     */
+-    suspend_conf(conf);
+-
+-    /* Remove the port. */
+-    conf->port[port] = NULL;
+-    --conf->port_cnt;
+-
+-    /* Reactivate sound device if ports are not zero */
+-    if (conf->port_cnt != 0)
+-	activate_conf(conf);
+-
+-    return PJ_SUCCESS;
+-}
+-
+-
+-/*
+- * Player callback.
+- */
+-static pj_status_t play_cb( /* in */  void *user_data,
+-			    /* in */  pj_uint32_t timestamp,
+-			    /* out */ void *output,
+-			    /* out */ unsigned size)
+-{
+-    pjmedia_conf *conf = user_data;
+-    pj_int16_t *output_buf = output;
+-    pj_int32_t highest_level = 0;
+-    int highest_index = -1;
+-    unsigned sources = 0;
+-    unsigned i, j;
+-    
+-    PJ_UNUSED_ARG(timestamp);
+-
+-    /* Clear temporary buffer. */
+-    pj_memset(output_buf, 0, size);
+-
+-    /* Get frames from ports. */
+-    for (i=0; i<conf->max_ports; ++i) {
+-	struct conf_port *conf_port = conf->port[i];
+-	pj_int32_t level;
+-	pj_bool_t silence;
+-
+-	if (!conf_port)
+-	    continue;
+-
+-	conf_port->port->get_frame(conf->play_buf, conf->samples_cnt);
+-	silence = pjmedia_vad_detect_silence(conf_port->vad,
+-					     conf->play_buf, 
+-					     conf->samples_cnt,
+-					     &level);
+-	if (!silence) {
+-	    if (level > highest_level) {
+-		highest_index = i;
+-		highest_level = level;
+-	    }
+-
+-	    ++sources;
+-
+-	    for (j=0; j<conf->samples_cnt; ++j) {
+-		output_buf[j] = (pj_int16_t)(output_buf[j] + conf->play_buf[j]);
+-	    }
+-	}
+-    }
+-
+-    /* Calculate average signal. */
+-    if (sources) {
+-	for (j=0; j<conf->samples_cnt; ++j) {
+-	    output_buf[j] = (pj_int16_t)(output_buf[j] / sources);
+-	}
+-    }
+-
+-    /* Broadcast to conference member. */
+-    for (i=0; i<conf->max_ports; ++i) {
+-	struct conf_port *conf_port = conf->port[i];
+-
+-	if (!conf_port)
+-	    continue;
+-
+-	if (!conf_port->is_member)
+-	    continue;
+-
+-	conf_port->port->put_frame(output_buf, conf->samples_cnt);
+-    }
+-
+-    return PJ_SUCCESS;
+-}
+-
+-/*
+- * Recorder callback.
+- */
+-static pj_status_t rec_cb(  /* in */  void *user_data,
+-			    /* in */  pj_uint32_t timestamp,
+-			    /* in */  const void *input,
+-			    /* in*/   unsigned size)
+-{
+-    pjmedia_conf *conf = user_data;
+-    unsigned i;
+-
+-    PJ_UNUSED_ARG(timestamp);
+-    PJ_UNUSED_ARG(size);
+-
+-    for (i=0; i<conf->max_ports; ++i) {
+-	struct conf_port *conf_port = conf->port[i];
+-
+-	if (!conf_port)
+-	    continue;
+-
+-	if (!conf_port->online)
+-	    continue;
+-
+-	conf_port->port->put_frame(input, conf->samples_cnt);
+-    }
+-    
+-    return PJ_SUCCESS;
+-}
+-
+diff --git a/pjmedia/src/pjmedia/conference.c b/pjmedia/src/pjmedia/conference.c
+new file mode 100644
+index 0000000..8677499
+--- /dev/null
++++ b/pjmedia/src/pjmedia/conference.c
+@@ -0,0 +1,839 @@
++/* $Id$ */
++/* 
++ * Copyright (C) 2003-2006 Benny Prijono <benny@prijono.org>
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA 
++ */
++#include <pjmedia/conference.h>
++#include <pjmedia/vad.h>
++#include <pjmedia/stream.h>
++#include <pjmedia/sound.h>
++#include <pjmedia/errno.h>
++#include <pjmedia/port.h>
++#include <pj/assert.h>
++#include <pj/log.h>
++#include <pj/pool.h>
++#include <pj/string.h>
++
++//#define CONF_DEBUG
++#ifdef CONF_DEBUG
++#   include <stdio.h>
++#   define TRACE_(x)   printf x
++#else
++#   define TRACE_(x)
++#endif
++
++
++#define THIS_FILE	"conference.c"
++#define RX_BUF_COUNT	8
++
++/*
++ * DON'T GET CONFUSED!!
++ *
++ * TX and RX directions are always viewed from the conference bridge's point
++ * of view, and NOT from the port's point of view. 
++ */
++
++
++struct conf_port
++{
++    pj_str_t		 name;		/**< Port name.			    */
++    pjmedia_port	*port;		/**< get_frame() and put_frame()    */
++    pjmedia_port_op	 rx_setting;	/**< Can we receive from this port  */
++    pjmedia_port_op	 tx_setting;	/**< Can we transmit to this port   */
++    pj_bool_t		*listeners;	/**< Array of listeners.	    */
++    pjmedia_vad		*vad;		/**< VAD for this port.		    */
++
++    /* Tx buffer contains the frame to be "transmitted" to this port
++     * (i.e. for put_frame()).
++     * We use dual buffer since the port may be accessed by two threads,
++     * and we don't want to use mutex for synchronization.
++     */
++    pj_int16_t		*cur_tx_buf;	/**< Buffer for put_frame().	    */
++    pj_int16_t		*tx_buf1;	/**< Buffer 1.			    */
++    pj_int16_t		*tx_buf2;	/**< Buffer 2.			    */
++
++    /* Rx buffers is a special buffer for sound device port (port 0). 
++     * It's not used by other ports.
++     */
++    int			 rx_write, rx_read;
++    pj_int16_t		*rx_buf[RX_BUF_COUNT];	/**< Buffer 			    */
++
++
++    /* Sum buf is a temporary buffer used to calculate the average signal
++     * received by this port from all other ports.
++     */
++    unsigned		 sources;	/**< Number of sources.		    */
++    pj_uint32_t		*sum_buf;	/**< Total sum of signal.	    */
++};
++
++
++/*
++ * Conference bridge.
++ */
++struct pjmedia_conf
++{
++    unsigned		  max_ports;	/**< Maximum ports.		    */
++    unsigned		  port_cnt;	/**< Current number of ports.	    */
++    unsigned		  connect_cnt;	/**< Total number of connections    */
++    pj_snd_stream	 *snd_rec;	/**< Sound recorder stream.	    */
++    pj_snd_stream	 *snd_player;	/**< Sound player stream.	    */
++    struct conf_port	**ports;	/**< Array of ports.		    */
++    pj_uint16_t		 *uns_buf;	/**< Buf for unsigned conversion    */
++    unsigned		  sampling_rate;	/**< Sampling rate.	    */
++    unsigned		  samples_per_frame;	/**< Samples per frame.	    */
++    unsigned		  bits_per_sample;	/**< Bits per sample.	    */
++    pj_snd_stream_info	  snd_info;
++};
++
++
++/* Prototypes */
++static pj_status_t play_cb( /* in */  void *user_data,
++			    /* in */  pj_uint32_t timestamp,
++			    /* out */ void *output,
++			    /* out */ unsigned size);
++static pj_status_t rec_cb(  /* in */  void *user_data,
++			    /* in */  pj_uint32_t timestamp,
++			    /* in */  const void *input,
++			    /* in*/   unsigned size);
++
++/*
++ * Create port.
++ */
++static pj_status_t create_conf_port( pj_pool_t *pool,
++				     pjmedia_conf *conf,
++				     const pj_str_t *name,
++				     struct conf_port **p_conf_port)
++{
++    struct conf_port *conf_port;
++    pj_status_t status;
++
++    /* Create port. */
++    conf_port = pj_pool_zalloc(pool, sizeof(struct conf_port));
++    PJ_ASSERT_RETURN(conf_port, PJ_ENOMEM);
++
++    /* Set name */
++    pj_strdup(pool, &conf_port->name, name);
++
++    /* Default has tx and rx enabled. */
++    conf_port->rx_setting = PJMEDIA_PORT_ENABLE;
++    conf_port->tx_setting = PJMEDIA_PORT_ENABLE;
++
++    /* Create transmit flag array */
++    conf_port->listeners = pj_pool_zalloc(pool, 
++					  conf->max_ports*sizeof(pj_bool_t));
++    PJ_ASSERT_RETURN(conf_port->listeners, PJ_ENOMEM);
++
++
++    /* Create and init vad. */
++    status = pjmedia_vad_create( pool, &conf_port->vad);
++    if (status != PJ_SUCCESS)
++	return status;
++
++    pjmedia_vad_set_adaptive(conf_port->vad, conf->samples_per_frame);
++
++
++    /* Create TX buffers. */
++    conf_port->tx_buf1 = pj_pool_zalloc(pool, conf->samples_per_frame *
++					      sizeof(conf_port->tx_buf1[0]));
++    PJ_ASSERT_RETURN(conf_port->tx_buf1, PJ_ENOMEM);
++
++    conf_port->tx_buf2 = pj_pool_zalloc(pool, conf->samples_per_frame *
++					      sizeof(conf_port->tx_buf2[0]));
++    PJ_ASSERT_RETURN(conf_port->tx_buf2, PJ_ENOMEM);
++
++    /* Set initial TX buffer */
++    conf_port->cur_tx_buf = conf_port->tx_buf1;
++
++    /* Create temporary buffer to calculate average signal received by
++     * this port.
++     */
++    conf_port->sum_buf = pj_pool_zalloc(pool, conf->samples_per_frame *
++					      sizeof(conf_port->sum_buf[0]));
++
++    
++
++    /* Done */
++    *p_conf_port = conf_port;
++    return PJ_SUCCESS;
++}
++
++/*
++ * Create port zero for the sound device.
++ */
++static pj_status_t create_sound_port( pj_pool_t *pool,
++				      pjmedia_conf *conf )
++{
++    struct conf_port *conf_port;
++    pj_str_t name = { "sound-device", 12 };
++    unsigned i;
++    pj_status_t status;
++
++
++    /* Init default sound device parameters. */
++    pj_memset(&conf->snd_info, 0, sizeof(conf->snd_info));
++    conf->snd_info.samples_per_sec = conf->sampling_rate;
++    conf->snd_info.bits_per_sample = conf->bits_per_sample;
++    conf->snd_info.samples_per_frame = conf->samples_per_frame;
++    conf->snd_info.bytes_per_frame = conf->samples_per_frame * 
++			       conf->bits_per_sample / 8;
++    conf->snd_info.frames_per_packet = 1;
++    
++
++    /* Create port */
++    status = create_conf_port(pool, conf, &name, &conf_port);
++    if (status != PJ_SUCCESS)
++	goto on_error;
++
++    /* Sound device has rx buffers. */
++    for (i=0; i<RX_BUF_COUNT; ++i) {
++	conf_port->rx_buf[i] = pj_pool_zalloc(pool, conf->samples_per_frame *
++					      sizeof(conf_port->rx_buf[0][0]));
++	if (conf_port->rx_buf[i] == NULL) {
++	    status = PJ_ENOMEM;
++	    goto on_error;
++	}
++    }
++    conf_port->rx_write = 0;
++    conf_port->rx_read = 0;
++
++
++     /* Set to port zero */
++    conf->ports[0] = conf_port;
++    conf->port_cnt++;
++
++    PJ_LOG(5,(THIS_FILE, "Sound device successfully created for port 0"));
++    return PJ_SUCCESS;
++
++on_error:
++    return status;
++
++}
++
++/*
++ * Create conference bridge.
++ */
++PJ_DEF(pj_status_t) pjmedia_conf_create( pj_pool_t *pool,
++					 unsigned max_ports,
++					 unsigned sampling_rate,
++					 unsigned samples_per_frame,
++					 unsigned bits_per_sample,
++					 pjmedia_conf **p_conf )
++{
++    pjmedia_conf *conf;
++    pj_status_t status;
++
++    PJ_LOG(5,(THIS_FILE, "Creating conference bridge with %d ports",
++	      max_ports));
++
++    /* Create and init conf structure. */
++    conf = pj_pool_zalloc(pool, sizeof(pjmedia_conf));
++    PJ_ASSERT_RETURN(conf, PJ_ENOMEM);
++
++    conf->ports = pj_pool_zalloc(pool, max_ports*sizeof(void*));
++    PJ_ASSERT_RETURN(conf->ports, PJ_ENOMEM);
++
++    conf->max_ports = max_ports;
++    conf->sampling_rate = sampling_rate;
++    conf->samples_per_frame = samples_per_frame;
++    conf->bits_per_sample = bits_per_sample;
++
++
++    /* Create port zero for sound device. */
++    status = create_sound_port(pool, conf);
++    if (status != PJ_SUCCESS)
++	return status;
++
++    /* Create temporary buffer. */
++    conf->uns_buf = pj_pool_zalloc(pool, samples_per_frame *
++					 sizeof(conf->uns_buf[0]));
++    /* Done */
++
++    *p_conf = conf;
++
++    return PJ_SUCCESS;
++}
++
++
++/*
++ * Create sound device
++ */
++static pj_status_t create_sound( pjmedia_conf *conf )
++{
++    /* Open recorder. */
++    conf->snd_rec = pj_snd_open_recorder(-1 ,&conf->snd_info, &rec_cb, conf);
++    if (conf->snd_rec == NULL) {
++	return -1;
++    }
++
++    /* Open player */
++    conf->snd_player = pj_snd_open_player(-1, &conf->snd_info, &play_cb, conf);
++    if (conf->snd_player == NULL) {
++	pj_snd_stream_close(conf->snd_rec);
++	return -1;
++    }
++
++    return PJ_SUCCESS;
++}
++
++/*
++ * Destroy sound device
++ */
++static pj_status_t destroy_sound( pjmedia_conf *conf )
++{
++    if (conf->snd_rec) {
++	pj_snd_stream_close(conf->snd_rec);
++	conf->snd_rec = NULL;
++    }
++    if (conf->snd_player) {
++	pj_snd_stream_close(conf->snd_player);
++	conf->snd_player = NULL;
++    }
++    return PJ_SUCCESS;
++}
++
++/*
++ * Activate sound device.
++ */
++static pj_status_t resume_sound( pjmedia_conf *conf )
++{
++    char errmsg[PJ_ERR_MSG_SIZE];
++    pj_status_t status;
++
++    if (conf->snd_rec == NULL) {
++	status = create_sound(conf);
++	if (status != PJ_SUCCESS)
++	    return status;
++    }
++
++    /* Start recorder. */
++    if (conf->snd_rec) {
++	status = pj_snd_stream_start(conf->snd_rec);
++	if (status != PJ_SUCCESS)
++	    goto on_error;
++    }
++
++    /* Start player. */
++    if (conf->snd_player) {
++	status = pj_snd_stream_start(conf->snd_player);
++	if (status != PJ_SUCCESS)
++	    goto on_error;
++    }
++
++    return PJ_SUCCESS;
++
++on_error:
++    pj_strerror(status, errmsg, sizeof(errmsg));
++    PJ_LOG(4,(THIS_FILE, "Error starting sound player/recorder: %s",
++	      errmsg));
++    return status;
++}
++
++
++/*
++ * Suspend sound device
++ */
++static void suspend_sound( pjmedia_conf *conf )
++{
++    if (conf->snd_rec)
++	pj_snd_stream_stop(conf->snd_rec);
++    if (conf->snd_player)
++	pj_snd_stream_stop(conf->snd_player);
++}
++
++
++/**
++ * Destroy conference bridge.
++ */
++PJ_DEF(pj_status_t) pjmedia_conf_destroy( pjmedia_conf *conf )
++{
++    PJ_ASSERT_RETURN(conf != NULL, PJ_EINVAL);
++
++    suspend_sound(conf);
++
++    pj_snd_stream_close(conf->snd_rec);
++    conf->snd_rec = NULL;
++    pj_snd_stream_close(conf->snd_player);
++    conf->snd_player = NULL;
++
++    return PJ_SUCCESS;
++}
++
++
++/*
++ * Add stream port to the conference bridge.
++ */
++PJ_DEF(pj_status_t) pjmedia_conf_add_port( pjmedia_conf *conf,
++					   pj_pool_t *pool,
++					   pjmedia_port *strm_port,
++					   const pj_str_t *port_name,
++					   unsigned *p_port )
++{
++    struct conf_port *conf_port;
++    unsigned index;
++    pj_status_t status;
++
++    PJ_ASSERT_RETURN(conf && pool && strm_port && port_name && p_port, 
++		     PJ_EINVAL);
++
++    if (conf->port_cnt >= conf->max_ports) {
++	pj_assert(!"Too many ports");
++	return PJ_ETOOMANY;
++    }
++
++    /* Find empty port in the conference bridge. */
++    for (index=0; index < conf->max_ports; ++index) {
++	if (conf->ports[index] == NULL)
++	    break;
++    }
++
++    pj_assert(index != conf->max_ports);
++
++    /* Create port structure. */
++    status = create_conf_port(pool, conf, port_name, &conf_port);
++    if (status != PJ_SUCCESS)
++	return status;
++
++    /* Set the port */
++    conf_port->port = strm_port;
++
++    /* Put the port. */
++    conf->ports[index] = conf_port;
++    conf->port_cnt++;
++
++    /* Done. */
++    *p_port = index;
++
++    return PJ_SUCCESS;
++}
++
++
++/*
++ * Change TX and RX settings for the port.
++ */
++PJ_DECL(pj_status_t) pjmedia_conf_configure_port( pjmedia_conf *conf,
++						  unsigned slot,
++						  pjmedia_port_op tx,
++						  pjmedia_port_op rx)
++{
++    struct conf_port *conf_port;
++
++    /* Check arguments */
++    PJ_ASSERT_RETURN(conf && slot<conf->max_ports, PJ_EINVAL);
++
++    /* Port must be valid. */
++    PJ_ASSERT_RETURN(conf->ports[slot] != NULL, PJ_EINVAL);
++
++    conf_port = conf->ports[slot];
++
++    if (tx != PJMEDIA_PORT_NO_CHANGE)
++	conf_port->tx_setting = tx;
++
++    if (rx != PJMEDIA_PORT_NO_CHANGE)
++	conf_port->rx_setting = rx;
++
++    return PJ_SUCCESS;
++}
++
++
++/*
++ * Connect port.
++ */
++PJ_DEF(pj_status_t) pjmedia_conf_connect_port( pjmedia_conf *conf,
++					       unsigned src_slot,
++					       unsigned sink_slot )
++{
++    struct conf_port *src_port, *dst_port;
++
++    /* Check arguments */
++    PJ_ASSERT_RETURN(conf && src_slot<conf->max_ports && 
++		     sink_slot<conf->max_ports, PJ_EINVAL);
++
++    /* Ports must be valid. */
++    PJ_ASSERT_RETURN(conf->ports[src_slot] != NULL, PJ_EINVAL);
++    PJ_ASSERT_RETURN(conf->ports[sink_slot] != NULL, PJ_EINVAL);
++
++    src_port = conf->ports[src_slot];
++    dst_port = conf->ports[sink_slot];
++
++    if (src_port->listeners[sink_slot] == 0) {
++	src_port->listeners[sink_slot] = 1;
++	++conf->connect_cnt;
++
++	if (conf->connect_cnt == 1)
++	    resume_sound(conf);
++
++	PJ_LOG(5,(THIS_FILE,"Port %.*s transmitting to port %.*s",
++		  (int)src_port->name.slen,
++		  src_port->name.ptr,
++		  (int)dst_port->name.slen,
++		  dst_port->name.ptr));
++    }
++
++    return PJ_SUCCESS;
++}
++
++
++/*
++ * Disconnect port
++ */
++PJ_DEF(pj_status_t) pjmedia_conf_disconnect_port( pjmedia_conf *conf,
++						  unsigned src_slot,
++						  unsigned sink_slot )
++{
++    struct conf_port *src_port, *dst_port;
++
++    /* Check arguments */
++    PJ_ASSERT_RETURN(conf && src_slot<conf->max_ports && 
++		     sink_slot<conf->max_ports, PJ_EINVAL);
++
++    /* Ports must be valid. */
++    PJ_ASSERT_RETURN(conf->ports[src_slot] != NULL, PJ_EINVAL);
++    PJ_ASSERT_RETURN(conf->ports[sink_slot] != NULL, PJ_EINVAL);
++
++    src_port = conf->ports[src_slot];
++    dst_port = conf->ports[sink_slot];
++
++    if (src_port->listeners[sink_slot] != 0) {
++	src_port->listeners[sink_slot] = 0;
++	--conf->connect_cnt;
++
++	PJ_LOG(5,(THIS_FILE,"Port %.*s stop transmitting to port %.*s",
++		  (int)src_port->name.slen,
++		  src_port->name.ptr,
++		  (int)dst_port->name.slen,
++		  dst_port->name.ptr));
++
++	if (conf->connect_cnt == 0) {
++	    suspend_sound(conf);
++	    destroy_sound(conf);
++	}
++    }
++
++    return PJ_SUCCESS;
++}
++
++
++/*
++ * Remove the specified port.
++ */
++PJ_DEF(pj_status_t) pjmedia_conf_remove_port( pjmedia_conf *conf,
++					      unsigned port )
++{
++    struct conf_port *conf_port;
++    unsigned i;
++
++    /* Check arguments */
++    PJ_ASSERT_RETURN(conf && port < conf->max_ports, PJ_EINVAL);
++
++    /* Port must be valid. */
++    PJ_ASSERT_RETURN(conf->ports[port] != NULL, PJ_EINVAL);
++
++    /* Suspend the sound devices.
++     * Don't want to remove port while port is being accessed by sound
++     * device's threads!
++     */
++    //suspend_sound(conf);
++
++    conf_port = conf->ports[port];
++    conf_port->tx_setting = PJMEDIA_PORT_DISABLE;
++    conf_port->rx_setting = PJMEDIA_PORT_DISABLE;
++
++    /* Remove this port from transmit array of other ports. */
++    for (i=0; i<conf->max_ports; ++i) {
++	conf_port = conf->ports[i];
++
++	if (!conf_port)
++	    continue;
++
++	if (conf_port->listeners[port] != 0) {
++	    --conf->connect_cnt;
++	    conf_port->listeners[port] = 0;
++	}
++    }
++
++    /* Remove all ports listening from this port. */
++    conf_port = conf->ports[port];
++    for (i=0; i<conf->max_ports; ++i) {
++	if (conf_port->listeners[i])
++	    --conf->connect_cnt;
++    }
++
++    /* Remove the port. */
++    conf->ports[port] = NULL;
++    --conf->port_cnt;
++
++    /* Reactivate sound device if there are connections */
++    if (conf->connect_cnt != 0) {
++    	//resume_sound(conf);
++    } else {
++	destroy_sound(conf);
++    }
++
++    pj_thread_sleep(60);
++    return PJ_SUCCESS;
++}
++
++/*
++ * Get port info
++ */
++PJ_DEF(pj_status_t) pjmedia_conf_get_port_info( pjmedia_conf *conf,
++						unsigned slot,
++						pjmedia_conf_port_info *info)
++{
++    struct conf_port *conf_port;
++
++    /* Check arguments */
++    PJ_ASSERT_RETURN(conf && slot<conf->max_ports, PJ_EINVAL);
++
++    /* Port must be valid. */
++    PJ_ASSERT_RETURN(conf->ports[slot] != NULL, PJ_EINVAL);
++
++    conf_port = conf->ports[slot];
++
++    info->name = conf_port->name;
++    info->tx_setting = conf_port->tx_setting;
++    info->rx_setting = conf_port->rx_setting;
++    info->listener = conf_port->listeners;
++
++    return PJ_SUCCESS;
++}
++
++
++/* Convert signed 16bit pcm sample to unsigned 16bit sample */
++static pj_uint16_t pcm2unsigned(pj_int32_t pcm)
++{
++    return (pj_uint16_t)(pcm + 32767);
++}
++
++/* Convert unsigned 16bit sample to signed 16bit pcm sample */
++static pj_int16_t unsigned2pcm(pj_uint32_t uns)
++{
++    return (pj_int16_t)(uns - 32767);
++}
++
++/*
++ * Player callback.
++ */
++static pj_status_t play_cb( /* in */  void *user_data,
++			    /* in */  pj_uint32_t timestamp,
++			    /* out */ void *output,
++			    /* out */ unsigned size)
++{
++    pjmedia_conf *conf = user_data;
++    pj_int16_t *output_buf = output;
++    unsigned i, j;
++    
++    PJ_UNUSED_ARG(timestamp);
++    PJ_UNUSED_ARG(size);
++
++    TRACE_(("p"));
++
++    /* Clear all port's tmp buffers. */
++    for (i=0; i<conf->max_ports; ++i) {
++	struct conf_port *conf_port = conf->ports[i];
++	pj_uint32_t *sum_buf;
++
++	if (!conf_port)
++	    continue;
++
++	conf_port->sources = 0;
++	sum_buf = conf_port->sum_buf;
++
++	for (j=0; j<conf->samples_per_frame; ++j)
++	    sum_buf[j] = 0;
++    }
++
++    /* Get frames from all ports, and "add" the signal 
++     * to sum_buf of all listeners of the port.
++     */
++    for (i=0; i<conf->max_ports; ++i) {
++	struct conf_port *conf_port = conf->ports[i];
++	pj_int32_t level;
++	pj_bool_t silence;
++
++	/* Skip empty port. */
++	if (!conf_port)
++	    continue;
++
++	/* Skip if we're not allowed to receive from this port. */
++	if (conf_port->rx_setting == PJMEDIA_PORT_DISABLE) {
++	    TRACE_(("rxdis:%d ", i));
++	    continue;
++	}
++
++	/* Get frame from this port. 
++	 * If port has rx_buffer, then get the frame from the rx_buffer
++	 * instead.
++	 */
++	if (i==0/*conf_port->cur_rx_buf*/) {
++	    pj_int16_t *rx_buf;
++
++	    if (conf_port->rx_read == conf_port->rx_write)
++		conf_port->rx_read = (conf_port->rx_write+RX_BUF_COUNT-RX_BUF_COUNT/2) % RX_BUF_COUNT;
++
++	    rx_buf = conf_port->rx_buf[conf_port->rx_read];
++	    for (j=0; j<conf->samples_per_frame; ++j) {
++		((pj_int16_t*)output)[j] = rx_buf[j];
++	    }
++	    conf_port->rx_read = (conf_port->rx_read+1) % RX_BUF_COUNT;
++	} else {
++	    pjmedia_frame frame;
++
++	    pj_memset(&frame, 0, sizeof(frame));
++	    frame.buf = output;
++	    frame.size = size;
++	    pjmedia_port_get_frame(conf_port->port, &frame);
++	}
++
++	/* Skip (after receiving the frame) if this port is muted. */
++	if (conf_port->rx_setting == PJMEDIA_PORT_MUTE)
++	    continue;
++
++	/* Do we have signal? */
++	silence = pjmedia_vad_detect_silence(conf_port->vad,
++					     output, 
++					     conf->samples_per_frame,
++					     &level);
++
++	/* Skip if we don't have signal. */
++	if (silence) {
++	    TRACE_(("sil:%d ", i));
++	    continue;
++	}
++
++	/* Convert the buffer to unsigned value */
++	for (j=0; j<conf->samples_per_frame; ++j)
++	    conf->uns_buf[j] = pcm2unsigned(((pj_int16_t*)output)[j]);
++
++	/* Add the signal to all listeners. */
++	for (j=0; j<conf->max_ports; ++j) {
++	    struct conf_port *listener = conf->ports[j];
++	    pj_uint32_t *sum_buf;
++	    unsigned k;
++
++	    if (conf_port->listeners[j] == 0)
++		continue;
++
++	    /* Skip if this listener doesn't want to receive audio */
++	    if (listener->tx_setting != PJMEDIA_PORT_ENABLE)
++		continue;
++
++	    //TRACE_(("mix:%d->%d ", i, j));
++
++	    sum_buf = listener->sum_buf;
++	    for (k=0; k<conf->samples_per_frame; ++k)
++		sum_buf[k] += conf->uns_buf[k];
++
++	    listener->sources++;
++	}
++    }
++
++    /* For all ports, calculate avg signal. */
++    for (i=0; i<conf->max_ports; ++i) {
++	struct conf_port *conf_port = conf->ports[i];
++	pjmedia_frame frame;
++	pj_int16_t *target_buf;
++
++	if (!conf_port)
++	    continue;
++
++
++	target_buf = (conf_port->cur_tx_buf==conf_port->tx_buf1?
++			conf_port->tx_buf2 : conf_port->tx_buf1);
++
++	if (!conf_port->sources) {
++	    for (j=0; j<conf->samples_per_frame; ++j)
++		target_buf[j] = 0;
++	} else {
++	    for (j=0; j<conf->samples_per_frame; ++j) {
++		target_buf[j] = unsigned2pcm(conf_port->sum_buf[j] / conf_port->sources);
++	    }
++	}
++
++	/* Switch buffer. */
++	conf_port->cur_tx_buf = target_buf;
++
++	if (conf_port->tx_setting != PJMEDIA_PORT_ENABLE)
++	    continue;
++
++	pj_memset(&frame, 0, sizeof(frame));
++	frame.type = PJMEDIA_FRAME_TYPE_AUDIO;
++	frame.buf = conf_port->cur_tx_buf;
++	frame.size = conf->samples_per_frame * conf->bits_per_sample / 8;
++	frame.timestamp.u64 = timestamp;
++
++	if (conf_port->port)
++	    pjmedia_port_put_frame(conf_port->port, &frame);
++
++    }
++
++    /* Return sound playback frame. */
++    for (j=0; j<conf->samples_per_frame; ++j)
++	output_buf[j] = conf->ports[0]->cur_tx_buf[j];
++
++    return PJ_SUCCESS;
++}
++
++
++/*
++ * Recorder callback.
++ */
++static pj_status_t rec_cb(  /* in */  void *user_data,
++			    /* in */  pj_uint32_t timestamp,
++			    /* in */  const void *input,
++			    /* in */  unsigned size)
++{
++    pjmedia_conf *conf = user_data;
++    struct conf_port *snd_port = conf->ports[0];
++    pj_int16_t *target_rx_buf;
++    unsigned i;
++
++    PJ_UNUSED_ARG(timestamp);
++    
++    TRACE_(("r"));
++
++    if (size != conf->samples_per_frame*2) {
++	TRACE_(("rxerr "));
++    }
++
++
++    /* Determine which rx_buffer to fill in */
++    target_rx_buf = snd_port->rx_buf[snd_port->rx_write];
++    
++    /* Copy samples from audio device to target rx_buffer */
++    for (i=0; i<conf->samples_per_frame; ++i) {
++	target_rx_buf[i] = ((pj_int16_t*)input)[i];
++    }
++
++    /* Switch buffer */
++    snd_port->rx_write = (snd_port->rx_write+1)%RX_BUF_COUNT;
++
++
++    /* Time for all ports (except sound port) to transmit frames */
++    /*
++    for (i=1; i<conf->max_ports; ++i) {
++	struct conf_port *conf_port = conf->ports[i];
++	pjmedia_frame frame;
++
++	if (!conf_port)
++	    continue;
++
++    }
++    */
++    
++    return PJ_SUCCESS;
++}
++
+diff --git a/pjmedia/src/pjmedia/g711.c b/pjmedia/src/pjmedia/g711.c
+index befd110..5dfffd4 100644
+--- a/pjmedia/src/pjmedia/g711.c
++++ b/pjmedia/src/pjmedia/g711.c
+@@ -21,6 +21,7 @@
+  */
+ #include <pjmedia/codec.h>
+ #include <pjmedia/errno.h>
++#include <pjmedia/port.h>
+ #include <pj/pool.h>
+ #include <pj/string.h>
+ #include <pj/assert.h>
+@@ -501,7 +502,7 @@ search(
+  * For further information see John C. Bellamy's Digital Telephony, 1982,
+  * John Wiley & Sons, pps 98-111 and 472-476.
+  */
+-static unsigned char
++unsigned char
+ linear2alaw(
+ 	int		pcm_val)	/* 2's complement (16-bit range) */
+ {
+@@ -537,7 +538,7 @@ linear2alaw(
+  * alaw2linear() - Convert an A-law value to 16-bit linear PCM
+  *
+  */
+-static int
++int
+ alaw2linear(
+ 	unsigned char	a_val)
+ {
+@@ -635,7 +636,7 @@ linear2ulaw(
+  * Note that this function expects to be passed the complement of the
+  * original code word. This is in keeping with ISDN conventions.
+  */
+-static int
++int
+ ulaw2linear(
+ 	unsigned char	u_val)
+ {
+diff --git a/pjmedia/src/pjmedia/port.c b/pjmedia/src/pjmedia/port.c
+new file mode 100644
+index 0000000..74dc31f
+--- /dev/null
++++ b/pjmedia/src/pjmedia/port.c
+@@ -0,0 +1,151 @@
++/* $Id$ */
++/* 
++ * Copyright (C) 2003-2006 Benny Prijono <benny@prijono.org>
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA 
++ */
++#include <pjmedia/port.h>
++#include <pjmedia/errno.h>
++#include <pj/assert.h>
++#include <pj/log.h>
++
++#define THIS_FILE	"port.c"
++
++
++/**
++ * Connect two ports.
++ */
++PJ_DEF(pj_status_t) pjmedia_port_connect( pj_pool_t *pool,
++					  pjmedia_port *upstream_port,
++					  pjmedia_port *downstream_port)
++{
++    pj_status_t status;
++
++    PJ_ASSERT_RETURN(pool && upstream_port && downstream_port, PJ_EINVAL);
++
++    /* They both MUST have the same media type. */
++    PJ_ASSERT_RETURN(upstream_port->info.type ==
++		     downstream_port->info.type, PJMEDIA_ENCTYPE);
++
++    /* They both MUST have the same clock rate. */
++    PJ_ASSERT_RETURN(upstream_port->info.sample_rate ==
++		     downstream_port->info.sample_rate, PJMEDIA_ENCCLOCKRATE);
++
++    /* They both MUST have the same samples per frame */
++    PJ_ASSERT_RETURN(upstream_port->info.samples_per_frame ==
++		     downstream_port->info.samples_per_frame, 
++		     PJMEDIA_ENCSAMPLESPFRAME);
++
++    /* They both MUST have the same bits per sample */
++    PJ_ASSERT_RETURN(upstream_port->info.bits_per_sample ==
++		     downstream_port->info.bits_per_sample, 
++		     PJMEDIA_ENCBITS);
++
++    /* They both MUST have the same bytes per frame */
++    PJ_ASSERT_RETURN(upstream_port->info.bytes_per_frame ==
++		     downstream_port->info.bytes_per_frame, 
++		     PJMEDIA_ENCBYTES);
++
++    /* Create mutual attachment. */
++    status = upstream_port->on_downstream_connect( pool, upstream_port,
++						   downstream_port );
++    if (status != PJ_SUCCESS)
++	return status;
++
++    status = downstream_port->on_upstream_connect( pool, downstream_port,
++						   upstream_port );
++    if (status != PJ_SUCCESS)
++	return status;
++
++    /* Save the attachment. */
++    upstream_port->downstream_port = downstream_port;
++    downstream_port->upstream_port = upstream_port;
++    
++    /* Done. */
++    return PJ_SUCCESS;
++}
++
++
++/**
++ * Disconnect ports.
++ */
++PJ_DEF(pj_status_t) pjmedia_port_disconnect( pjmedia_port *upstream_port,
++					     pjmedia_port *downstream_port)
++{
++    PJ_ASSERT_RETURN(upstream_port && downstream_port, PJ_EINVAL);
++
++    if (upstream_port->downstream_port == downstream_port)
++	upstream_port->downstream_port = NULL;
++
++    if (downstream_port->upstream_port == upstream_port)
++	downstream_port->upstream_port = NULL;
++
++    return PJ_SUCCESS;
++}
++
++
++/**
++ * Get a frame from the port (and subsequent downstream ports).
++ */
++PJ_DEF(pj_status_t) pjmedia_port_get_frame( pjmedia_port *port,
++					    pjmedia_frame *frame )
++{
++    PJ_ASSERT_RETURN(port && frame, PJ_EINVAL);
++
++    return port->get_frame(port, frame);
++}
++
++
++
++/**
++ * Put a frame to the port (and subsequent downstream ports).
++ */
++PJ_DEF(pj_status_t) pjmedia_port_put_frame( pjmedia_port *port,
++					    const pjmedia_frame *frame )
++{
++    PJ_ASSERT_RETURN(port && frame, PJ_EINVAL);
++
++    return port->put_frame(port, frame);
++
++}
++
++
++/**
++ * Destroy port (and subsequent downstream ports)
++ */
++PJ_DEF(pj_status_t) pjmedia_port_destroy( pjmedia_port *port )
++{
++    pj_status_t status;
++
++    PJ_ASSERT_RETURN(port, PJ_EINVAL);
++
++    /* Recursively call this function again to destroy downstream
++     * port first.
++     */
++    if (port->downstream_port) {
++	status = pjmedia_port_destroy(port->downstream_port);
++	if (status != PJ_SUCCESS)
++	    return status;
++	pjmedia_port_disconnect(port, port->downstream_port);
++    }
++
++    status = port->on_destroy(port);
++
++    return status;
++}
++
++
++
++
+diff --git a/pjmedia/src/pjmedia/rtp.c b/pjmedia/src/pjmedia/rtp.c
+index 1901aec..9fa3123 100644
+--- a/pjmedia/src/pjmedia/rtp.c
++++ b/pjmedia/src/pjmedia/rtp.c
+@@ -43,7 +43,6 @@ PJ_DEF(pj_status_t) pjmedia_rtp_session_init( pjmedia_rtp_session *ses,
+ 
+     /* Check RTP header packing. */
+     if (sizeof(struct pjmedia_rtp_hdr) != 12) {
+-	unsigned sz = sizeof(struct pjmedia_rtp_hdr);
+ 	pj_assert(!"Wrong RTP header packing!");
+ 	return PJMEDIA_RTP_EINPACK;
+     }
+diff --git a/pjmedia/src/pjmedia/rtp_port.c b/pjmedia/src/pjmedia/rtp_port.c
+new file mode 100644
+index 0000000..2667266
+--- /dev/null
++++ b/pjmedia/src/pjmedia/rtp_port.c
+@@ -0,0 +1,234 @@
++/* $Id$ */
++/* 
++ * Copyright (C) 2003-2006 Benny Prijono <benny@prijono.org>
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA 
++ */
++#include <pjmedia/rtp_port.h>
++#include <pjmedia/errno.h>
++#include <pjmedia/rtp.h>
++#include <pjmedia/rtcp.h>
++#include <pj/assert.h>
++#include <pj/pool.h>
++#include <pj/sock_select.h>
++#include <pj/string.h>
++
++
++#define RTP_PORT_SIGNATURE	('R'<<2 | 'T'<<1 | 'P')
++
++struct rtp_port
++{
++    pjmedia_port	base;
++    pjmedia_sock_info	sock_info;
++    pj_sockaddr_in	rem_rtp_addr;
++    pj_sockaddr_in	rem_rctp_addr;
++    pjmedia_rtp_session	tx_session;
++    pjmedia_rtp_session	rx_session;
++    pj_rtcp_session	rtcp;
++    char		tx_buf[1500];
++    char		rx_buf[1500];
++};
++
++
++static pj_status_t rtp_on_upstream_connect(pj_pool_t *pool,
++					   pjmedia_port *this_port,
++					   pjmedia_port *upstream);
++static pj_status_t rtp_put_frame( pjmedia_port *this_port, 
++				  const pjmedia_frame *frame);
++static pj_status_t rtp_get_frame( pjmedia_port *this_port, 
++				  pjmedia_frame *frame);
++static pj_status_t rtp_on_destroy( pjmedia_port *this_port );
++
++
++PJ_DEF(pj_status_t) pjmedia_rtp_port_create( pj_pool_t *pool,
++					     pjmedia_sock_info *sock_info,
++					     pjmedia_port **p_port)
++{
++    struct rtp_port *rtp;
++
++    PJ_ASSERT_RETURN(pool && sock_info && p_port,
++		     PJ_EINVAL);
++
++
++    rtp = pj_pool_zalloc(pool, sizeof(struct rtp_port));
++    rtp->base.info.name = pj_str("rtp");
++    rtp->base.info.signature = RTP_PORT_SIGNATURE;
++    rtp->base.info.type = PJMEDIA_TYPE_NONE;
++    rtp->base.info.has_info = PJ_FALSE;
++    rtp->base.info.need_info = PJ_TRUE;
++
++    rtp->base.on_upstream_connect = &rtp_on_upstream_connect;
++    rtp->base.put_frame = &rtp_put_frame;
++    rtp->base.get_frame = &rtp_get_frame;
++    rtp->base.on_destroy = &rtp_on_destroy;
++    
++    pj_memcpy(&rtp->sock_info, sock_info, sizeof(pjmedia_sock_info));
++
++    return PJ_SUCCESS;
++}
++
++
++PJ_DEF(pj_status_t) pjmedia_rtp_port_configure( pjmedia_port *rtp,
++						const pj_sockaddr_in *rem_rtp,
++						const pj_sockaddr_in *rem_rtcp)
++{
++    struct rtp_port *rtp_port = (struct rtp_port *)rtp;
++
++    PJ_ASSERT_RETURN(rtp, PJ_EINVAL);
++
++    if (rem_rtp) {
++	pj_memcpy(&rtp_port->rem_rtp_addr, rem_rtp, sizeof(pj_sockaddr_in));
++    }
++    if (rem_rtcp) {
++	pj_memcpy(&rtp_port->rem_rctp_addr, rem_rtcp, sizeof(pj_sockaddr_in));
++    }
++
++    return PJ_SUCCESS;
++}
++
++
++static pj_status_t rtp_on_upstream_connect(pj_pool_t *pool,
++					   pjmedia_port *this_port,
++					   pjmedia_port *upstream)
++{
++    struct rtp_port *rtp_port = (struct rtp_port *)this_port;
++
++    rtp_port->base.info.type = upstream->info.type;
++    rtp_port->base.info.pt = upstream->info.pt;
++    pj_strdup(pool, &rtp_port->base.info.encoding_name, 
++	      &upstream->info.encoding_name);
++    rtp_port->base.info.sample_rate = upstream->info.sample_rate;
++    rtp_port->base.info.bits_per_sample = upstream->info.bits_per_sample;
++    rtp_port->base.info.samples_per_frame = upstream->info.samples_per_frame;
++    rtp_port->base.info.bytes_per_frame = upstream->info.bytes_per_frame;
++
++    rtp_port->base.info.has_info = PJ_TRUE;
++
++    pjmedia_rtp_session_init(&rtp_port->tx_session, upstream->info.pt, 10);
++    pjmedia_rtp_session_init(&rtp_port->rx_session, upstream->info.pt, 10);
++    pj_rtcp_init(&rtp_port->rtcp, 10);
++
++    return PJ_SUCCESS;
++}
++
++static pj_status_t rtp_put_frame( pjmedia_port *this_port, 
++				  const pjmedia_frame *frame)
++{
++    struct rtp_port *rtp_port = (struct rtp_port *)this_port;
++    void *rtphdr;
++    int rtphdrlen;
++    pj_ssize_t sent;
++    pj_status_t status;
++
++    if (!rtp_port->base.info.has_info)
++	return PJMEDIA_RTP_ENOCONFIG;
++
++    if (rtp_port->rem_rtp_addr.sin_family != PJ_AF_INET)
++	return PJMEDIA_RTP_EBADDEST;
++
++    status = pjmedia_rtp_encode_rtp(&rtp_port->tx_session, 
++				    rtp_port->base.info.pt,
++				    0, frame->size,
++				    (frame->size / rtp_port->base.info.bytes_per_frame),
++				    &rtphdr, &rtphdrlen);
++    if (status != PJ_SUCCESS)
++	return status;
++
++    if (rtphdrlen != sizeof(pjmedia_rtp_hdr))
++	return PJMEDIA_RTP_EINPKT;
++    
++
++    /* Scatter send in PJLIB will be nice here..! */
++    pj_memcpy(rtp_port->tx_buf, rtphdr, sizeof(pjmedia_rtp_hdr));
++    pj_memcpy(rtp_port->tx_buf+sizeof(pjmedia_rtp_hdr), frame->buf, frame->size);
++
++    sent = sizeof(pjmedia_rtp_hdr) + frame->size;
++    status = pj_sock_sendto( rtp_port->sock_info.rtp_sock,
++			     rtp_port->tx_buf, &sent, 0,
++			     &rtp_port->rem_rtp_addr,
++			     sizeof(rtp_port->rem_rtp_addr));
++
++    return status;
++}
++
++
++static pj_status_t rtp_get_frame( pjmedia_port *this_port, 
++				  pjmedia_frame *frame)
++{
++    struct rtp_port *rtp_port = (struct rtp_port *)this_port;
++    pj_fd_set_t fds;
++    pj_time_val timeout = { 0, 0};
++    pj_ssize_t pktlen;
++    const pjmedia_rtp_hdr *hdr;
++    const void *payload;
++    unsigned payloadlen;
++    pj_status_t status;
++
++    PJ_FD_ZERO(&fds);
++    PJ_FD_SET(rtp_port->sock_info.rtp_sock, &fds);
++
++    /* Check for incoming packet. */
++    status = pj_sock_select(FD_SETSIZE, &fds, NULL, NULL, &timeout);
++    if (status <= 0)
++	goto on_error;
++
++    /* Receive packet. */
++    pktlen = sizeof(rtp_port->rx_buf);
++    status = pj_sock_recv(rtp_port->sock_info.rtp_sock, 
++			  rtp_port->rx_buf, &pktlen, 0);
++    if (pktlen < 1 || status != PJ_SUCCESS)
++	goto on_error;
++
++
++    /* Update RTP and RTCP session. */
++    status = pjmedia_rtp_decode_rtp(&rtp_port->rx_session, 
++				    rtp_port->rx_buf, pktlen, 
++				    &hdr, &payload, &payloadlen);
++    if (status != PJ_SUCCESS)
++	goto on_error;
++    
++
++    status = pjmedia_rtp_session_update(&rtp_port->rx_session, hdr);
++    if (status != 0 && 
++	status != PJMEDIA_RTP_ESESSPROBATION && 
++	status != PJMEDIA_RTP_ESESSRESTART) 
++    {
++	goto on_error;
++    }
++    pj_rtcp_rx_rtp(&rtp_port->rtcp, pj_ntohs(hdr->seq), pj_ntohl(hdr->ts));
++
++    /* Copy */
++    if (frame->size > payloadlen) frame->size = payloadlen;
++    pj_memcpy(frame->buf, payload, frame->size);
++    frame->type = PJMEDIA_FRAME_TYPE_AUDIO;
++    frame->timestamp.u64 = pj_ntohl(hdr->ts);
++
++    return PJ_SUCCESS;
++
++
++on_error:
++    frame->type = PJMEDIA_FRAME_TYPE_NONE;
++    frame->size = 0;
++    return PJ_SUCCESS;
++}
++
++
++static pj_status_t rtp_on_destroy( pjmedia_port *this_port )
++{
++    PJ_UNUSED_ARG(this_port);
++    return PJ_SUCCESS;
++}
++
++
+diff --git a/pjmedia/src/pjmedia/session.c b/pjmedia/src/pjmedia/session.c
+index 1bcb610..884d8a9 100644
+--- a/pjmedia/src/pjmedia/session.c
++++ b/pjmedia/src/pjmedia/session.c
+@@ -384,6 +384,14 @@ PJ_DEF(pj_status_t) pjmedia_session_enum_streams(const pjmedia_session *session,
+     return PJ_SUCCESS;
+ }
+ 
++
++PJ_DEF(pj_status_t) pjmedia_session_get_port(  pjmedia_session *session,
++					       unsigned index,
++					       pjmedia_port **p_port)
++{
++    return pjmedia_stream_get_port( session->stream[index], p_port);
++}
++
+ /**
+  * Get statistics
+  */
+diff --git a/pjmedia/src/pjmedia/stream.c b/pjmedia/src/pjmedia/stream.c
+index c1e019a..1133e68 100644
+--- a/pjmedia/src/pjmedia/stream.c
++++ b/pjmedia/src/pjmedia/stream.c
+@@ -52,7 +52,7 @@ struct pjmedia_channel
+     unsigned		    pt;		    /**< Payload type.		    */
+     pj_bool_t		    paused;	    /**< Paused?.		    */
+     pj_snd_stream_info	    snd_info;	    /**< Sound stream param.	    */
+-    pj_snd_stream	   *snd_stream;	    /**< Sound stream.		    */
++    //pj_snd_stream	   *snd_stream;	    /**< Sound stream.		    */
+     unsigned		    in_pkt_size;    /**< Size of input buffer.	    */
+     void		   *in_pkt;	    /**< Input buffer.		    */
+     unsigned		    out_pkt_size;   /**< Size of output buffer.	    */
+@@ -72,6 +72,7 @@ struct pjmedia_channel
+  */
+ struct pjmedia_stream
+ {
++    pjmedia_port	     port;	    /**< Port interface.	    */
+     pjmedia_channel	    *enc;	    /**< Encoding channel.	    */
+     pjmedia_channel	    *dec;	    /**< Decoding channel.	    */
+ 
+@@ -102,22 +103,20 @@ struct pjmedia_stream
+  * This callback is called by sound device's player thread when it
+  * needs to feed the player with some frames.
+  */
+-static pj_status_t play_callback(/* in */   void *user_data,
+-				 /* in */   pj_uint32_t timestamp,
+-				 /* out */  void *frame,
+-				 /*inout*/  unsigned size)
++static pj_status_t get_frame( pjmedia_port *port, pjmedia_frame *frame)
+ {
+-    pjmedia_channel *channel = user_data;
+-    pjmedia_stream *stream = channel->stream;
++    pjmedia_stream *stream = port->user_data;
++    pjmedia_channel *channel = stream->dec;
++    
+     char frame_type;
+     pj_status_t status;
+     struct pjmedia_frame frame_in, frame_out;
+ 
+-    PJ_UNUSED_ARG(timestamp);
+-
+     /* Do nothing if we're quitting. */
+-    if (stream->quit_flag)
+-	return -1;
++    if (stream->quit_flag) {
++	frame->type = PJMEDIA_FRAME_TYPE_NONE;
++	return PJ_SUCCESS;
++    }
+ 
+     /* Lock jitter buffer mutex */
+     pj_mutex_lock( stream->jb_mutex );
+@@ -132,8 +131,8 @@ static pj_status_t play_callback(/* in */   void *user_data,
+     if (status != PJ_SUCCESS || frame_type == PJMEDIA_JB_ZERO_FRAME ||
+ 	frame_type == PJMEDIA_JB_MISSING_FRAME) 
+     {
+-	pj_memset(frame, 0, size);
+-	return 0;
++	frame->type = PJMEDIA_FRAME_TYPE_NONE;
++	return PJ_SUCCESS;
+     }
+ 
+ 
+@@ -147,20 +146,23 @@ static pj_status_t play_callback(/* in */   void *user_data,
+     if (status != 0) {
+ 	TRACE_((THIS_FILE, "decode() has return error status %d", status));
+ 
+-	pj_memset(frame, 0, size);
+-	return 0;
++	frame->type = PJMEDIA_FRAME_TYPE_NONE;
++	return PJ_SUCCESS;
+     }
+ 
+     /* Put in sound buffer. */
+-    if (frame_out.size > size) {
++    if (frame_out.size > frame->size) {
+ 	TRACE_((THIS_FILE, "Sound playout buffer truncated %d bytes", 
+-		frame_out.size - size));
+-	frame_out.size = size;
++		frame_out.size - frame->size));
++	frame_out.size = frame->size;
+     }
+ 
+-    pj_memcpy(frame, frame_out.buf, size);
++    frame->type = PJMEDIA_FRAME_TYPE_AUDIO;
++    frame->size = frame_out.size;
++    frame->timestamp.u64 = 0;
++    pj_memcpy(frame->buf, frame_out.buf, frame_out.size);
+ 
+-    return 0;
++    return PJ_SUCCESS;
+ }
+ 
+ 
+@@ -171,33 +173,26 @@ static pj_status_t play_callback(/* in */   void *user_data,
+  * enough audio samples. We will encode the audio samples and
+  * send it to remote.
+  */
+-static pj_status_t rec_callback( /* in */ void *user_data,
+-			         /* in */ pj_uint32_t timestamp,
+-			         /* in */ const void *frame,
+-			         /* in */ unsigned size)
++static pj_status_t put_frame( pjmedia_port *port, 
++			      const pjmedia_frame *frame )
+ {
+-    pjmedia_channel *channel = user_data;
+-    pjmedia_stream *stream = channel->stream;
++    pjmedia_stream *stream = port->user_data;
++    pjmedia_channel *channel = stream->enc;
+     pj_status_t status = 0;
+-    struct pjmedia_frame frame_in, frame_out;
++    struct pjmedia_frame frame_out;
+     int ts_len;
+     void *rtphdr;
+     int rtphdrlen;
+     pj_ssize_t sent;
+ 
+ 
+-    PJ_UNUSED_ARG(timestamp);
+-
+     /* Check if stream is quitting. */
+     if (stream->quit_flag)
+ 	return -1;
+ 
+     /* Encode. */
+-    frame_in.type = PJMEDIA_TYPE_AUDIO;
+-    frame_in.buf = (void*)frame;
+-    frame_in.size = size;
+     frame_out.buf = ((char*)channel->out_pkt) + sizeof(pjmedia_rtp_hdr);
+-    status = stream->codec->op->encode( stream->codec, &frame_in, 
++    status = stream->codec->op->encode( stream->codec, frame, 
+ 					channel->out_pkt_size - sizeof(pjmedia_rtp_hdr), 
+ 					&frame_out);
+     if (status != 0) {
+@@ -207,7 +202,7 @@ static pj_status_t rec_callback( /* in */ void *user_data,
+     }
+ 
+     /* Encapsulate. */
+-    ts_len = size / (channel->snd_info.bits_per_sample / 8);
++    ts_len = frame->size / (channel->snd_info.bits_per_sample / 8);
+     status = pjmedia_rtp_encode_rtp( &channel->rtp, 
+ 				channel->pt, 0, 
+ 				frame_out.size, ts_len, 
+@@ -238,7 +233,7 @@ static pj_status_t rec_callback( /* in */ void *user_data,
+     stream->stat.enc.pkt++;
+     stream->stat.enc.bytes += frame_out.size+sizeof(pjmedia_rtp_hdr);
+ 
+-    return 0;
++    return PJ_SUCCESS;
+ }
+ 
+ 
+@@ -425,6 +420,7 @@ static pj_status_t create_channel( pj_pool_t *pool,
+ 
+     init_snd_param(&channel->snd_info, codec_param);
+ 
++    /*
+     if (dir == PJMEDIA_DIR_ENCODING)
+ 	channel->snd_stream = pj_snd_open_recorder(-1, &channel->snd_info, 
+ 						   &rec_callback, channel);
+@@ -434,7 +430,7 @@ static pj_status_t create_channel( pj_pool_t *pool,
+ 
+     if (!channel->snd_stream)
+ 	return -1;
+-
++    */
+ 
+     /* Done. */
+     *p_channel = channel;
+@@ -463,6 +459,19 @@ PJ_DEF(pj_status_t) pjmedia_stream_create( pjmedia_endpt *endpt,
+     stream = pj_pool_zalloc(pool, sizeof(pjmedia_stream));
+     PJ_ASSERT_RETURN(stream != NULL, PJ_ENOMEM);
+ 
++    /* Init port. */
++    stream->port.info.name = pj_str("stream");
++    stream->port.info.signature = ('S'<<3 | 'T'<<2 | 'R'<<1 | 'M');
++    stream->port.info.type = PJMEDIA_TYPE_AUDIO;
++    stream->port.info.has_info = 1;
++    stream->port.info.need_info = 0;
++    stream->port.info.pt = info->fmt.pt;
++    pj_strdup(pool, &stream->port.info.encoding_name, &info->fmt.encoding_name);
++    stream->port.info.sample_rate = info->fmt.sample_rate;
++    stream->port.user_data = stream;
++    stream->port.put_frame = &put_frame;
++    stream->port.get_frame = &get_frame;
++
+ 
+     /* Init stream: */
+    
+@@ -494,6 +503,11 @@ PJ_DEF(pj_status_t) pjmedia_stream_create( pjmedia_endpt *endpt,
+     if (status != PJ_SUCCESS)
+ 	goto err_cleanup;
+ 
++    /* Set additional info. */
++    stream->port.info.bits_per_sample = 0;
++    stream->port.info.samples_per_frame = info->fmt.sample_rate*codec_param.ptime/1000;
++    stream->port.info.bytes_per_frame = codec_param.avg_bps/8 * codec_param.ptime/1000;
++
+ 
+     /* Open the codec: */
+ 
+@@ -575,6 +589,7 @@ PJ_DEF(pj_status_t) pjmedia_stream_destroy( pjmedia_stream *stream )
+ 
+     /* Close encoding sound stream. */
+     
++    /*
+     if (stream->enc && stream->enc->snd_stream) {
+ 
+ 	pj_snd_stream_stop(stream->enc->snd_stream);
+@@ -582,9 +597,11 @@ PJ_DEF(pj_status_t) pjmedia_stream_destroy( pjmedia_stream *stream )
+ 	stream->enc->snd_stream = NULL;
+ 
+     }
++    */
+ 
+     /* Close decoding sound stream. */
+ 
++    /*
+     if (stream->dec && stream->dec->snd_stream) {
+ 
+ 	pj_snd_stream_stop(stream->dec->snd_stream);
+@@ -592,6 +609,7 @@ PJ_DEF(pj_status_t) pjmedia_stream_destroy( pjmedia_stream *stream )
+ 	stream->dec->snd_stream = NULL;
+ 
+     }
++    */
+ 
+     /* Wait for jitter buffer thread to quit: */
+ 
+@@ -622,6 +640,17 @@ PJ_DEF(pj_status_t) pjmedia_stream_destroy( pjmedia_stream *stream )
+ 
+ 
+ /*
++ * Get the port interface.
++ */
++PJ_DEF(pj_status_t) pjmedia_stream_get_port( pjmedia_stream *stream,
++					     pjmedia_port **p_port )
++{
++    *p_port = &stream->port;
++    return PJ_SUCCESS;
++}
++
++
++/*
+  * Start stream.
+  */
+ PJ_DEF(pj_status_t) pjmedia_stream_start(pjmedia_stream *stream)
+@@ -631,12 +660,12 @@ PJ_DEF(pj_status_t) pjmedia_stream_start(pjmedia_stream *stream)
+ 
+     if (stream->enc && (stream->dir & PJMEDIA_DIR_ENCODING)) {
+ 	stream->enc->paused = 0;
+-	pj_snd_stream_start(stream->enc->snd_stream);
++	//pj_snd_stream_start(stream->enc->snd_stream);
+     }
+ 
+     if (stream->dec && (stream->dir & PJMEDIA_DIR_DECODING)) {
+ 	stream->dec->paused = 0;
+-	pj_snd_stream_start(stream->dec->snd_stream);
++	//pj_snd_stream_start(stream->dec->snd_stream);
+     }
+ 
+     return PJ_SUCCESS;
+diff --git a/pjmedia/src/pjmedia/vad.c b/pjmedia/src/pjmedia/vad.c
+index 4544afa..645f3fe 100644
+--- a/pjmedia/src/pjmedia/vad.c
++++ b/pjmedia/src/pjmedia/vad.c
+@@ -56,7 +56,8 @@ struct pjmedia_vad
+ 
+ 
+ 
+-unsigned char linear2ulaw(int		pcm_val);
++unsigned char linear2ulaw(int pcm_val);
++
+ 
+ PJ_DEF(pj_status_t) pjmedia_vad_create( pj_pool_t *pool,
+ 					pjmedia_vad **p_vad)
+@@ -87,9 +88,9 @@ PJ_DEF(pj_status_t) pjmedia_vad_set_adaptive( pjmedia_vad *vad,
+ 
+     vad->frame_size = frame_size;
+     vad->mode = VAD_MODE_ADAPTIVE;
+-    vad->min_signal_cnt = 3;
+-    vad->min_silence_cnt = 20;
+-    vad->recalc_cnt = 30;
++    vad->min_signal_cnt = 10;
++    vad->min_silence_cnt = 64;
++    vad->recalc_cnt = 250;
+     vad->cur_threshold = 20;
+ 
+     return PJ_SUCCESS;
+@@ -227,7 +228,7 @@ PJ_DEF(pj_bool_t) pjmedia_vad_detect_silence( pjmedia_vad *vad,
+ 	     * Increase silence threshold.
+ 	     */
+ 	    vad->cur_threshold += (vad->weakest_signal - vad->cur_threshold)/4;
+-	    PJ_LOG(5,(THIS_FILE, "Vad cur_threshold increased to %d",
++	    PJ_LOG(6,(THIS_FILE, "Vad cur_threshold increased to %d",
+ 		      vad->cur_threshold));
+ 	}
+ 	else if (vad->silence_cnt >= vad->recalc_cnt) {
+@@ -235,7 +236,7 @@ PJ_DEF(pj_bool_t) pjmedia_vad_detect_silence( pjmedia_vad *vad,
+ 	     * Decrease silence threshold.
+ 	     */
+ 	    vad->cur_threshold = (vad->cur_threshold+vad->loudest_silence)/2+1;
+-	    PJ_LOG(5,(THIS_FILE, "Vad cur_threshold decreased to %d",
++	    PJ_LOG(6,(THIS_FILE, "Vad cur_threshold decreased to %d",
+ 		      vad->cur_threshold));
+ 	}
+ 	else { 
+@@ -250,7 +251,7 @@ PJ_DEF(pj_bool_t) pjmedia_vad_detect_silence( pjmedia_vad *vad,
+ 		updated = PJ_FALSE;
+ 
+ 	    if (updated) {
+-		PJ_LOG(5,(THIS_FILE,
++		PJ_LOG(6,(THIS_FILE,
+ 			  "Vad cur_threshold updated to %d",
+ 			  vad->cur_threshold));
+ 	    }
+diff --git a/pjsip/src/pjsua/main.c b/pjsip/src/pjsua/main.c
+index 66d4de4..467c5a5 100644
+--- a/pjsip/src/pjsua/main.c
++++ b/pjsip/src/pjsua/main.c
+@@ -136,6 +136,11 @@ static void keystroke_help(void)
+     puts("|  ]  Select next dialog       |  t  Toggle Online status |  d  Dump status   |");
+     puts("|  [  Select previous dialog   |                          |                   |");
+     puts("+-----------------------------------------------------------------------------+");
++    puts("|      Conference Command                                                     |");
++    puts("| cl  List ports                                                              |");
++    puts("| cc  Connect port                                                            |");
++    puts("| cd  Disconnect port                                                         |");
++    puts("+-----------------------------------------------------------------------------+");
+     puts("|  q  QUIT                                                                    |");
+     puts("+=============================================================================+");
+     printf(">>> ");
+@@ -254,6 +259,26 @@ static void ui_input_url(const char *title, char *buf, int len,
+     }
+ }
+ 
++static void conf_list(void)
++{
++    pjmedia_conf_port_info info;
++    struct pjsua_inv_data *inv_data;
++
++    printf("Conference ports:\n");
++
++    inv_data = pjsua.inv_list.next;
++    while (inv_data != &pjsua.inv_list) {
++	
++	pjmedia_conf_get_port_info(pjsua.mconf, inv_data->conf_slot, &info);
++
++	printf("Port %2d %.*s\n", inv_data->conf_slot, 
++				  (int)info.name.slen, info.name.ptr);
++
++	inv_data = inv_data->next;
++    }
++}
++
++
+ static void ui_console_main(void)
+ {
+     char menuin[10];
+@@ -395,6 +420,37 @@ static void ui_console_main(void)
+ 	    pjsua_pres_refresh();
+ 	    break;
+ 
++	case 'c':
++	    switch (menuin[1]) {
++	    case 'l':
++		conf_list();
++		break;
++	    case 'c':
++	    case 'd':
++		{
++		    char src_port[10], dst_port[10];
++		    pj_status_t status;
++
++		    if (!simple_input("Connect src port #:", src_port, sizeof(src_port)))
++			break;
++		    if (!simple_input("To dst port #:", dst_port, sizeof(dst_port)))
++			break;
++
++		    if (menuin[1]=='c') {
++			status = pjmedia_conf_connect_port(pjsua.mconf, atoi(src_port), atoi(dst_port));
++		    } else {
++			status = pjmedia_conf_disconnect_port(pjsua.mconf, atoi(src_port), atoi(dst_port));
++		    }
++		    if (status == PJ_SUCCESS) {
++			puts("Success");
++		    } else {
++			puts("ERROR!!");
++		    }
++		}
++		break;
++	    }
++	    break;
++
+ 	case 'd':
+ 	    pjsua_dump();
+ 	    break;
+diff --git a/pjsip/src/pjsua/pjsua.h b/pjsip/src/pjsua/pjsua.h
+index 6bd19d5..3afde35 100644
+--- a/pjsip/src/pjsua/pjsua.h
++++ b/pjsip/src/pjsua/pjsua.h
+@@ -49,6 +49,12 @@ PJ_BEGIN_DECL
+  */
+ #define PJSUA_MAX_BUDDIES   32
+ 
++/**
++ * Max simultaneous calls.
++ */
++#define PJSUA_MAX_CALLS	    8
++
++
+ /** 
+  * Structure to be attached to all dialog. 
+  * Given a dialog "dlg", application can retrieve this structure
+@@ -58,9 +64,10 @@ struct pjsua_inv_data
+ {
+     PJ_DECL_LIST_MEMBER(struct pjsua_inv_data);
+ 
+-    pjsip_inv_session	*inv;
+-    pjmedia_session	*session;
+-    void		*mod_data[PJSIP_MAX_MODULE];
++    pjsip_inv_session	*inv;	    /**< The invite session.		    */
++    pjmedia_session	*session;   /**< The media session.		    */
++    unsigned		 conf_slot; /**< Slot # in conference bridge.	    */
++    unsigned		 call_slot; /**< RTP media index in med_sock_use[]  */
+ };
+ 
+ 
+@@ -105,9 +112,16 @@ struct pjsua
+ 
+     /* Media:  */
+ 
+-    pjmedia_endpt   *med_endpt;    /**< Media endpoint.		*/
+-    pj_bool_t	     null_audio;
+-    pjmedia_sock_info med_skinfo;
++    pjmedia_endpt   *med_endpt;	    /**< Media endpoint.		*/
++    pjmedia_conf    *mconf;	    /**< Media conference.		*/
++    pj_bool_t	     null_audio;    /**< Null audio flag.		*/
++
++
++    /* Since we support simultaneous calls, we need to have multiple
++     * RTP sockets.
++     */
++    pjmedia_sock_info med_sock_info[PJSUA_MAX_CALLS];
++    pj_bool_t	      med_sock_use[PJSUA_MAX_CALLS];
+ 
+     /* User info: */
+ 
+@@ -137,7 +151,7 @@ struct pjsua
+     pjsip_cred_info  cred_info[4];
+ 
+ 
+-    /* Threading: */
++    /* Threading (optional): */
+ 
+     int		     thread_cnt;    /**< Thread count.			*/
+     pj_thread_t	    *threads[8];    /**< Thread instances.		*/
+diff --git a/pjsip/src/pjsua/pjsua_core.c b/pjsip/src/pjsua/pjsua_core.c
+index 7556020..59386d1 100644
+--- a/pjsip/src/pjsua/pjsua_core.c
++++ b/pjsip/src/pjsua/pjsua_core.c
+@@ -135,7 +135,8 @@ static pj_bool_t mod_pjsua_on_rx_response(pjsip_rx_data *rdata)
+ /* 
+  * Initialize sockets and optionally get the public address via STUN. 
+  */
+-static pj_status_t init_sockets()
++static pj_status_t init_sockets(pj_bool_t sip,
++				pjmedia_sock_info *skinfo)
+ {
+     enum { 
+ 	RTP_START_PORT = 4000,
+@@ -151,22 +152,24 @@ static pj_status_t init_sockets()
+     pj_uint16_t rtp_port;
+     pj_sock_t sock[3];
+     pj_sockaddr_in mapped_addr[3];
+-    pj_status_t status;
++    pj_status_t status = PJ_SUCCESS;
+ 
+     for (i=0; i<3; ++i)
+ 	sock[i] = PJ_INVALID_SOCKET;
+ 
+-    /* Create and bind SIP UDP socket. */
+-    status = pj_sock_socket(PJ_AF_INET, PJ_SOCK_DGRAM, 0, &sock[SIP_SOCK]);
+-    if (status != PJ_SUCCESS) {
+-	pjsua_perror(THIS_FILE, "socket() error", status);
+-	goto on_error;
+-    }
++    if (sip) {
++	/* Create and bind SIP UDP socket. */
++	status = pj_sock_socket(PJ_AF_INET, PJ_SOCK_DGRAM, 0, &sock[SIP_SOCK]);
++	if (status != PJ_SUCCESS) {
++	    pjsua_perror(THIS_FILE, "socket() error", status);
++	    goto on_error;
++	}
+     
+-    status = pj_sock_bind_in(sock[SIP_SOCK], 0, pjsua.sip_port);
+-    if (status != PJ_SUCCESS) {
+-	pjsua_perror(THIS_FILE, "bind() error", status);
+-	goto on_error;
++	status = pj_sock_bind_in(sock[SIP_SOCK], 0, pjsua.sip_port);
++	if (status != PJ_SUCCESS) {
++	    pjsua_perror(THIS_FILE, "bind() error", status);
++	    goto on_error;
++	}
+     }
+ 
+     /* Initialize start of RTP port to try. */
+@@ -229,7 +232,10 @@ static pj_status_t init_sockets()
+ 	    for (i=0; i<3; ++i)
+ 		pj_memcpy(&mapped_addr[i], &addr, sizeof(addr));
+ 
+-	    mapped_addr[SIP_SOCK].sin_port = pj_htons((pj_uint16_t)pjsua.sip_port);
++	    if (sip)
++		mapped_addr[SIP_SOCK].sin_port = pj_htons((pj_uint16_t)pjsua.sip_port);
++	    else
++		mapped_addr[RTP_SOCK].sin_port = pj_htons((pj_uint16_t)rtp_port);
+ 	    mapped_addr[RTP_SOCK].sin_port = pj_htons((pj_uint16_t)rtp_port);
+ 	    mapped_addr[RTCP_SOCK].sin_port = pj_htons((pj_uint16_t)(rtp_port+1));
+ 	    break;
+@@ -256,31 +262,37 @@ static pj_status_t init_sockets()
+ 	goto on_error;
+     }
+ 
+-    pjsua.sip_sock = sock[SIP_SOCK];
+-    pj_memcpy(&pjsua.sip_sock_name, &mapped_addr[SIP_SOCK], sizeof(pj_sockaddr_in));
++    if (sip) {
++	pjsua.sip_sock = sock[SIP_SOCK];
++	pj_memcpy(&pjsua.sip_sock_name, &mapped_addr[SIP_SOCK], sizeof(pj_sockaddr_in));
++    }
+ 
+-    pjsua.med_skinfo.rtp_sock = sock[RTP_SOCK];
+-    pj_memcpy(&pjsua.med_skinfo.rtp_addr_name, 
++    skinfo->rtp_sock = sock[RTP_SOCK];
++    pj_memcpy(&skinfo->rtp_addr_name, 
+ 	      &mapped_addr[RTP_SOCK], sizeof(pj_sockaddr_in));
+ 
+-    pjsua.med_skinfo.rtcp_sock = sock[RTCP_SOCK];
+-    pj_memcpy(&pjsua.med_skinfo.rtcp_addr_name, 
++    skinfo->rtcp_sock = sock[RTCP_SOCK];
++    pj_memcpy(&skinfo->rtcp_addr_name, 
+ 	      &mapped_addr[RTCP_SOCK], sizeof(pj_sockaddr_in));
+ 
+-    PJ_LOG(4,(THIS_FILE, "SIP UDP socket reachable at %s:%d",
+-	      pj_inet_ntoa(pjsua.sip_sock_name.sin_addr), 
+-	      pj_ntohs(pjsua.sip_sock_name.sin_port)));
++    if (sip) {
++	PJ_LOG(4,(THIS_FILE, "SIP UDP socket reachable at %s:%d",
++		  pj_inet_ntoa(pjsua.sip_sock_name.sin_addr), 
++		  pj_ntohs(pjsua.sip_sock_name.sin_port)));
++    }
+     PJ_LOG(4,(THIS_FILE, "RTP socket reachable at %s:%d",
+-	      pj_inet_ntoa(pjsua.med_skinfo.rtp_addr_name.sin_addr), 
+-	      pj_ntohs(pjsua.med_skinfo.rtp_addr_name.sin_port)));
++	      pj_inet_ntoa(skinfo->rtp_addr_name.sin_addr), 
++	      pj_ntohs(skinfo->rtp_addr_name.sin_port)));
+     PJ_LOG(4,(THIS_FILE, "RTCP UDP socket reachable at %s:%d",
+-	      pj_inet_ntoa(pjsua.med_skinfo.rtcp_addr_name.sin_addr), 
+-	      pj_ntohs(pjsua.med_skinfo.rtcp_addr_name.sin_port)));
++	      pj_inet_ntoa(skinfo->rtcp_addr_name.sin_addr), 
++	      pj_ntohs(skinfo->rtcp_addr_name.sin_port)));
+ 
+     return PJ_SUCCESS;
+ 
+ on_error:
+     for (i=0; i<3; ++i) {
++	if (sip && i==0)
++	    continue;
+ 	if (sock[i] != PJ_INVALID_SOCKET)
+ 	    pj_sock_close(sock[i]);
+     }
+@@ -484,6 +496,17 @@ pj_status_t pjsua_init(void)
+ 	return status;
+     }
+ 
++    /* Init conference bridge. */
++
++    status = pjmedia_conf_create(pjsua.pool, 8, 8000, 160, 16, &pjsua.mconf);
++    if (status != PJ_SUCCESS) {
++	pj_caching_pool_destroy(&pjsua.cp);
++	pjsua_perror(THIS_FILE, 
++		     "Media stack initialization has returned error", 
++		     status);
++	return status;
++    }
++
+     /* Init pjmedia-codecs: */
+ 
+     status = pjmedia_codec_init(pjsua.med_endpt);
+@@ -510,18 +533,18 @@ pj_status_t pjsua_start(void)
+ {
+     int i;  /* Must be signed */
+     pjsip_transport *udp_transport;
+-    pj_status_t status;
++    pj_status_t status = PJ_SUCCESS;
+ 
+     /* Init sockets (STUN etc): */
+-
+-    status = init_sockets();
+-    if (status != PJ_SUCCESS) {
+-	pjsua_perror(THIS_FILE, "init_sockets() has returned error", 
+-		     status);
+-	return status;
++    for (i=0; i<PJ_ARRAY_SIZE(pjsua.med_sock_info); ++i) {
++	status = init_sockets(i==0, &pjsua.med_sock_info[i]);
++	if (status != PJ_SUCCESS) {
++	    pjsua_perror(THIS_FILE, "init_sockets() has returned error", 
++			 status);
++	    return status;
++	}
+     }
+ 
+-
+     /* Add UDP transport: */
+ 
+     {
+diff --git a/pjsip/src/pjsua/pjsua_inv.c b/pjsip/src/pjsua/pjsua_inv.c
+index bfd714b..434d0c7 100644
+--- a/pjsip/src/pjsua/pjsua_inv.c
++++ b/pjsip/src/pjsua/pjsua_inv.c
+@@ -41,12 +41,26 @@ pj_status_t pjsua_invite(const char *cstr_dest_uri,
+     pjsip_inv_session *inv;
+     struct pjsua_inv_data *inv_data;
+     pjsip_tx_data *tdata;
++    int med_sk_index = 0;
+     pj_status_t status;
+ 
+     /* Convert cstr_dest_uri to dest_uri */
+     
+     dest_uri = pj_str((char*)cstr_dest_uri);
+ 
++    /* Find free socket. */
++    for (med_sk_index=0; med_sk_index<PJSUA_MAX_CALLS; ++med_sk_index) {
++	if (!pjsua.med_sock_use[med_sk_index])
++	    break;
++    }
++
++    if (med_sk_index == PJSUA_MAX_CALLS) {
++	PJ_LOG(3,(THIS_FILE, "Error: too many calls!"));
++	return PJ_ETOOMANY;
++    }
++
++    pjsua.med_sock_use[med_sk_index] = 1;
++
+     /* Create outgoing dialog: */
+ 
+     status = pjsip_dlg_create_uac( pjsip_ua_instance(), &pjsua.local_uri,
+@@ -60,7 +74,8 @@ pj_status_t pjsua_invite(const char *cstr_dest_uri,
+     /* Get media capability from media endpoint: */
+ 
+     status = pjmedia_endpt_create_sdp( pjsua.med_endpt, dlg->pool,
+-				       1, &pjsua.med_skinfo, &offer);
++				       1, &pjsua.med_sock_info[med_sk_index], 
++				       &offer);
+     if (status != PJ_SUCCESS) {
+ 	pjsua_perror(THIS_FILE, "pjmedia unable to create SDP", status);
+ 	goto on_error;
+@@ -79,6 +94,7 @@ pj_status_t pjsua_invite(const char *cstr_dest_uri,
+ 
+     inv_data = pj_pool_zalloc( dlg->pool, sizeof(struct pjsua_inv_data));
+     inv_data->inv = inv;
++    inv_data->call_slot = med_sk_index;
+     dlg->mod_data[pjsua.mod.id] = inv_data;
+     inv->mod_data[pjsua.mod.id] = inv_data;
+ 
+@@ -129,6 +145,7 @@ pj_status_t pjsua_invite(const char *cstr_dest_uri,
+ on_error:
+ 
+     PJ_TODO(DESTROY_DIALOG_ON_FAIL);
++    pjsua.med_sock_use[med_sk_index] = 0;
+     return status;
+ }
+ 
+@@ -182,16 +199,33 @@ pj_bool_t pjsua_inv_on_incoming(pjsip_rx_data *rdata)
+ 	    pjsip_inv_session *inv;
+ 	    struct pjsua_inv_data *inv_data;
+ 	    pjmedia_sdp_session *answer;
++	    int med_sk_index;
++
+ 
++	    /* Find free socket. */
++	    for (med_sk_index=0; med_sk_index<PJSUA_MAX_CALLS; ++med_sk_index) {
++		if (!pjsua.med_sock_use[med_sk_index])
++		    break;
++	    }
++
++	    if (med_sk_index == PJSUA_MAX_CALLS) {
++		PJ_LOG(3,(THIS_FILE, "Error: too many calls!"));
++		return PJ_TRUE;
++	    }
++
++
++	    pjsua.med_sock_use[med_sk_index] = 1;
+ 
+ 	    /* Get media capability from media endpoint: */
+ 
+ 	    status = pjmedia_endpt_create_sdp( pjsua.med_endpt, rdata->tp_info.pool,
+-					       1, &pjsua.med_skinfo, &answer );
++					       1, &pjsua.med_sock_info[med_sk_index], 
++					       &answer );
+ 	    if (status != PJ_SUCCESS) {
+ 
+ 		pjsip_endpt_respond_stateless(pjsua.endpt, rdata, 500, NULL,
+ 					      NULL, NULL);
++		pjsua.med_sock_use[med_sk_index] = 0;
+ 		return PJ_TRUE;
+ 	    }
+ 
+@@ -199,8 +233,10 @@ pj_bool_t pjsua_inv_on_incoming(pjsip_rx_data *rdata)
+ 
+ 	    status = pjsip_dlg_create_uas( pjsip_ua_instance(), rdata,
+ 					   &pjsua.contact_uri, &dlg);
+-	    if (status != PJ_SUCCESS)
++	    if (status != PJ_SUCCESS) {
++		pjsua.med_sock_use[med_sk_index] = 0;
+ 		return PJ_TRUE;
++	    }
+ 
+ 
+ 	    /* Create invite session: */
+@@ -214,6 +250,7 @@ pj_bool_t pjsua_inv_on_incoming(pjsip_rx_data *rdata)
+ 		    status = pjsip_dlg_send_response(dlg, 
+ 						     pjsip_rdata_get_tsx(rdata),
+ 						     response);
++		pjsua.med_sock_use[med_sk_index] = 0;
+ 		return PJ_TRUE;
+ 
+ 	    }
+@@ -223,6 +260,7 @@ pj_bool_t pjsua_inv_on_incoming(pjsip_rx_data *rdata)
+ 
+ 	    inv_data = pj_pool_zalloc(dlg->pool, sizeof(struct pjsua_inv_data));
+ 	    inv_data->inv = inv;
++	    inv_data->call_slot = inv_data->call_slot = med_sk_index;
+ 	    dlg->mod_data[pjsua.mod.id] = inv_data;
+ 	    inv->mod_data[pjsua.mod.id] = inv_data;
+ 
+@@ -260,7 +298,9 @@ void pjsua_inv_on_state_changed(pjsip_inv_session *inv, pjsip_event *e)
+ 	pj_assert(inv_data != NULL);
+ 
+ 	if (inv_data && inv_data->session) {
++	    pjmedia_conf_remove_port(pjsua.mconf, inv_data->conf_slot);
+ 	    pjmedia_session_destroy(inv_data->session);
++	    pjsua.med_sock_use[inv_data->call_slot] = 0;
+ 	    inv_data->session = NULL;
+ 
+ 	    PJ_LOG(3,(THIS_FILE,"Media session is destroyed"));
+@@ -312,7 +352,9 @@ void pjsua_inv_on_media_update(pjsip_inv_session *inv, pj_status_t status)
+ 
+     inv_data = inv->dlg->mod_data[pjsua.mod.id];
+     if (inv_data && inv_data->session) {
++	pjmedia_conf_remove_port(pjsua.mconf, inv_data->conf_slot);
+ 	pjmedia_session_destroy(inv_data->session);
++	pjsua.med_sock_use[inv_data->call_slot] = 0;
+ 	inv_data->session = NULL;
+     }
+ 
+@@ -335,14 +377,17 @@ void pjsua_inv_on_media_update(pjsip_inv_session *inv, pj_status_t status)
+ 	return;
+     }
+ 
+-
+     /* Create new media session. 
+      * The media session is active immediately.
+      */
+ 
+     if (!pjsua.null_audio) {
++	pjmedia_port *media_port;
++	pj_str_t port_name;
++	char tmp[PJSIP_MAX_URL_SIZE];
+ 
+-	status = pjmedia_session_create( pjsua.med_endpt, 1, &pjsua.med_skinfo,
++	status = pjmedia_session_create( pjsua.med_endpt, 1, 
++					 &pjsua.med_sock_info[inv_data->call_slot],
+ 					 local_sdp, remote_sdp, 
+ 					 &inv_data->session );
+ 	if (status != PJ_SUCCESS) {
+@@ -351,6 +396,30 @@ void pjsua_inv_on_media_update(pjsip_inv_session *inv, pj_status_t status)
+ 	    return;
+ 	}
+ 
++	pjmedia_session_get_port(inv_data->session, 0, &media_port);
++
++	port_name.ptr = tmp;
++	port_name.slen = pjsip_uri_print(PJSIP_URI_IN_REQ_URI,
++					 inv_data->inv->dlg->remote.info->uri,
++					 tmp, sizeof(tmp));
++	if (port_name.slen < 1) {
++	    port_name = pj_str("call");
++	}
++	status = pjmedia_conf_add_port( pjsua.mconf, inv->pool,
++					media_port, 
++					&port_name,
++					&inv_data->conf_slot);
++	if (status != PJ_SUCCESS) {
++	    pjsua_perror(THIS_FILE, "Unable to create conference slot", 
++			 status);
++	    pjmedia_session_destroy(inv_data->session);
++	    inv_data->session = NULL;
++	    return;
++	}
++
++	pjmedia_conf_connect_port( pjsua.mconf, 0, inv_data->conf_slot);
++	pjmedia_conf_connect_port( pjsua.mconf, inv_data->conf_slot, 0);
++
+ 	PJ_LOG(3,(THIS_FILE,"Media has been started successfully"));
+     }
+ }

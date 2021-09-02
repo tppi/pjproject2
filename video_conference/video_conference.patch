@@ -1,0 +1,3151 @@
+diff --git a/pjmedia/build/Makefile b/pjmedia/build/Makefile
+index f880bf8..3b9cfb3 100644
+--- a/pjmedia/build/Makefile
++++ b/pjmedia/build/Makefile
+@@ -73,7 +73,7 @@ export PJMEDIA_OBJS += $(OS_OBJS) $(M_OBJS) $(CC_OBJS) $(HOST_OBJS) \
+ 			stream.o stream_info.o tonegen.o transport_adapter_sample.o \
+ 			transport_ice.o transport_loop.o transport_srtp.o transport_udp.o \
+ 			types.o vid_codec.o vid_codec_util.o \
+-			vid_port.o vid_stream.o vid_stream_info.o vid_tee.o \
++			vid_port.o vid_stream.o vid_stream_info.o vid_conf.o \
+ 			wav_player.o wav_playlist.o wav_writer.o wave.o \
+ 			wsola.o audiodev.o videodev.o
+ 
+diff --git a/pjmedia/build/pjmedia.vcproj b/pjmedia/build/pjmedia.vcproj
+index 444e729..28d0d2c 100644
+--- a/pjmedia/build/pjmedia.vcproj
++++ b/pjmedia/build/pjmedia.vcproj
+@@ -7007,6 +7007,10 @@
+ 				>
+ 			</File>
+ 			<File
++				RelativePath="..\src\pjmedia\vid_conf.c"
++				>
++			</File>
++			<File
+ 				RelativePath="..\src\pjmedia\vid_port.c"
+ 				>
+ 			</File>
+@@ -7696,6 +7700,10 @@
+ 				>
+ 			</File>
+ 			<File
++				RelativePath="..\include\pjmedia\vid_conf.h"
++				>
++			</File>
++			<File
+ 				RelativePath="..\include\pjmedia\vid_port.h"
+ 				>
+ 			</File>
+diff --git a/pjmedia/include/pjmedia.h b/pjmedia/include/pjmedia.h
+index 4792d61..0adb954 100644
+--- a/pjmedia/include/pjmedia.h
++++ b/pjmedia/include/pjmedia.h
+@@ -68,10 +68,11 @@
+ #include <pjmedia/transport_loop.h>
+ #include <pjmedia/transport_srtp.h>
+ #include <pjmedia/transport_udp.h>
+-#include <pjmedia/vid_port.h>
+ #include <pjmedia/vid_codec.h>
++#include <pjmedia/vid_conf.h>
++#include <pjmedia/vid_port.h>
+ #include <pjmedia/vid_stream.h>
+-#include <pjmedia/vid_tee.h>
++//#include <pjmedia/vid_tee.h>
+ #include <pjmedia/wav_playlist.h>
+ #include <pjmedia/wav_port.h>
+ #include <pjmedia/wave.h>
+diff --git a/pjmedia/include/pjmedia/converter.h b/pjmedia/include/pjmedia/converter.h
+index 8a9dd11..b6b3349 100644
+--- a/pjmedia/include/pjmedia/converter.h
++++ b/pjmedia/include/pjmedia/converter.h
+@@ -123,6 +123,12 @@ typedef struct pjmedia_converter
+ 
+ 
+ /**
++ * Settings for pjmedia_converter_convert2().
++ */
++typedef void pjmedia_converter_convert_setting;
++
++
++/**
+  * Converter factory operation.
+  */
+ struct pjmedia_converter_factory_op
+@@ -157,19 +163,19 @@ struct pjmedia_converter_factory_op
+ struct pjmedia_converter_op
+ {
+     /**
+-     * Convert the buffer in the source frame and save the result in the
++     * Convert the buffer of the source frame and save the result in the
+      * buffer of the destination frame, according to conversion format that
+      * was specified when the converter was created.
+      *
+      * Note that application should use #pjmedia_converter_convert() instead
+      * of calling this function directly.
+      *
+-     * @param cv	The converter instance.
+-     * @param src_frame	The source frame.
+-     * @param dst_frame	The destination frame.
++     * @param cv		The converter instance.
++     * @param src_frame		The source frame.
++     * @param dst_frame		The destination frame.
+      *
+-     * @return		PJ_SUCCESS if conversion has been performed
+-     * 			successfully.
++     * @return			PJ_SUCCESS if conversion has been performed
++     * 				successfully.
+      */
+     pj_status_t (*convert)(pjmedia_converter *cv,
+ 			   pjmedia_frame *src_frame,
+@@ -181,10 +187,40 @@ struct pjmedia_converter_op
+      * Note that application should use #pjmedia_converter_destroy() instead
+      * of calling this function directly.
+      *
+-     * @param cv	The converter.
++     * @param cv		The converter.
+      */
+     void (*destroy)(pjmedia_converter *cv);
+ 
++    /**
++     * Convert a region in the buffer of the source frame and put the result
++     * into a region in the buffer of the destination frame, according to
++     * conversion format that was specified when the converter was created.
++     *
++     * Note that application should use #pjmedia_converter_convert2() instead
++     * of calling this function directly.
++     *
++     * @param cv		The converter instance.
++     * @param src_frame		The source frame.
++     * @param src_frame_size	The source frame size.
++     * @param src_reg_pos	The source region position.
++     * @param dst_frame		The destination frame.
++     * @param dst_frame_size	The destination frame size.
++     * @param dst_reg_pos	The destination region position.
++     * @param param		This is unused for now and must be NULL.
++     *
++     * @return			PJ_SUCCESS if conversion has been performed
++     * 				successfully.
++     */
++    pj_status_t (*convert2)(pjmedia_converter	    *cv,
++			    pjmedia_frame	    *src_frame,
++			    const pjmedia_rect_size *src_frame_size,
++			    const pjmedia_coord	    *src_pos,
++			    pjmedia_frame	    *dst_frame,
++			    const pjmedia_rect_size *dst_frame_size,
++			    const pjmedia_coord	    *dst_pos,
++			    pjmedia_converter_convert_setting
++						    *param);
++
+ };
+ 
+ 
+@@ -302,6 +338,35 @@ PJ_DECL(pj_status_t) pjmedia_converter_convert(pjmedia_converter *cv,
+ 					       pjmedia_frame *src_frame,
+ 					       pjmedia_frame *dst_frame);
+ 
++
++/**
++ * Convert a region in the buffer of the source frame and put the result
++ * into a region in the buffer of the destination frame, according to
++ * conversion format that was specified when the converter was created.
++ *
++ * @param cv		    The converter instance.
++ * @param src_frame	    The source frame.
++ * @param src_frame_size    The source frame size.
++ * @param src_reg_pos	    The source region position.
++ * @param dst_frame	    The destination frame.
++ * @param dst_frame_size    The destination frame size.
++ * @param dst_reg_pos	    The destination region position.
++ * @param param		    This is unused for now and must be NULL.
++ *
++ * @return		    PJ_SUCCESS if conversion has been performed
++ * 			    successfully.
++ */
++PJ_DECL(pj_status_t) pjmedia_converter_convert2(
++				    pjmedia_converter	    *cv,
++				    pjmedia_frame	    *src_frame,
++				    const pjmedia_rect_size *src_frame_size,
++				    const pjmedia_coord	    *src_pos,
++				    pjmedia_frame	    *dst_frame,
++				    const pjmedia_rect_size *dst_frame_size,
++				    const pjmedia_coord	    *dst_pos,
++				    pjmedia_converter_convert_setting
++							    *param);
++
+ /**
+  * Destroy the converter.
+  *
+diff --git a/pjmedia/include/pjmedia/signatures.h b/pjmedia/include/pjmedia/signatures.h
+index 3d4402e..6f7257e 100644
+--- a/pjmedia/include/pjmedia/signatures.h
++++ b/pjmedia/include/pjmedia/signatures.h
+@@ -197,6 +197,7 @@ PJ_INLINE(const char*) pjmedia_sig_name(pjmedia_obj_sig sig, char buf[])
+ #define PJMEDIA_SIG_CLASS_VID_OTHER(c,d) PJMEDIA_SIGNATURE('V','O',c,d)
+ #define PJMEDIA_SIG_IS_CLASS_VID_OTHER(s) ((s)>>24=='V' && (s)>>16=='O')
+ 
++#define PJMEDIA_SIG_VID_CONF		PJMEDIA_SIG_CLASS_VID_OTHER('C','F')
+ #define PJMEDIA_SIG_VID_PORT		PJMEDIA_SIG_CLASS_VID_OTHER('P','O')
+ 
+ 
+diff --git a/pjmedia/include/pjmedia/vid_conf.h b/pjmedia/include/pjmedia/vid_conf.h
+new file mode 100644
+index 0000000..c298588
+--- /dev/null
++++ b/pjmedia/include/pjmedia/vid_conf.h
+@@ -0,0 +1,294 @@
++/* $Id$ */
++/* 
++ * Copyright (C) 2019 Teluu Inc. (http://www.teluu.com)
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA 
++ */
++#ifndef __PJMEDIA_VID_CONF_H__
++#define __PJMEDIA_VID_CONF_H__
++
++/**
++ * @file vid_conf.h
++ * @brief Video conference bridge.
++ */
++#include <pjmedia/port.h>
++
++/**
++ * @addtogroup PJMEDIA_VID_CONF Video conference bridge
++ * @ingroup PJMEDIA_PORT
++ * @brief Video conference bridge implementation
++ *  destination
++ * @{
++ *
++ * This describes the video conference bridge implementation in PJMEDIA. The
++ * conference bridge provides powerful and efficient mechanism to route the
++ * video flow and combine multiple video data from multiple video sources.
++ */
++
++PJ_BEGIN_DECL
++
++
++/**
++ * Opaque type for video conference bridge.
++ */
++typedef struct pjmedia_vid_conf pjmedia_vid_conf;
++
++
++/**
++ * Enumeration of video conference layout mode.
++ */
++typedef enum pjmedia_vid_conf_layout
++{
++    /**
++     * In mixing video from multiple sources, each source will occupy about
++     * the same size in the mixing result frame at all time.
++     */
++    PJMEDIA_VID_CONF_LAYOUT_DEFAULT,
++
++    /**
++     * Warning: this is not implemented yet.
++     *
++     * In mixing video from multiple sources, one specified participant
++     * (or source port) will be the focus (i.e: occupy bigger portion
++     * than the others).
++     */
++    PJMEDIA_VID_CONF_LAYOUT_SELECTIVE_FOCUS,
++
++    /**
++     * Warning: this is not implemented yet.
++     *
++     * In mixing video from multiple sources, one participant will be the
++     * focus at a time (i.e: occupy bigger portion than the others), and
++     * after some interval the focus will be shifted to another participant,
++     * so each participant will have the same focus duration.
++     */
++    PJMEDIA_VID_CONF_LAYOUT_INTERVAL_FOCUS,
++
++    /**
++     * Warning: this is not implemented yet.
++     *
++     * In mixing video from multiple sources, each participant (or source
++     * port) will have specific layout configuration.
++     */
++    PJMEDIA_VID_CONF_LAYOUT_CUSTOM,
++
++} pjmedia_vid_conf_layout;
++
++
++/**
++ * Video conference bridge settings.
++ */
++typedef struct pjmedia_vid_conf_setting
++{
++    /**
++     * Maximum number of slots or media ports can be registered to the bridge.
++     *
++     * Default: 32
++     */
++    unsigned		 max_slot_cnt;
++
++    /**
++     * Frame rate the bridge will operate at. For video playback smoothness,
++     * ideally the bridge frame rate should be the common multiple of the
++     * frame rates of the ports. Otherwise, ports whose unaligned frame rates
++     * may experience jitter. For example, if the application will work with
++     * frame rates of 10, 15, and 30 fps, setting this to 30 should be okay.
++     * But if it also needs to handle 20 fps, better setting this to 60.
++     *
++     * Default: 60 (frames per second)
++     */
++    unsigned		 frame_rate;
++
++    /**
++     * Layout setting, see pjmedia_vid_conf_layout.
++     *
++     * Default: PJMEDIA_VID_CONF_LAYOUT_DEFAULT
++     */
++    unsigned		 layout;
++
++} pjmedia_vid_conf_setting;
++
++
++/**
++ * Video conference bridge port info.
++ */
++typedef struct pjmedia_vid_conf_port_info
++{
++    unsigned		 slot;		    /**< Slot index.		    */
++    pj_str_t		 name;		    /**< Port name.		    */
++    pjmedia_format	 format;	    /**< Format.		    */
++    unsigned		 listener_cnt;	    /**< Number of listeners.	    */
++    unsigned		*listener_slots;    /**< Array of listeners.	    */
++    unsigned		 transmitter_cnt;   /**< Number of transmitter.	    */
++    unsigned		*transmitter_slots; /**< Array of transmitter.	    */
++} pjmedia_vid_conf_port_info;
++
++
++/**
++ * Initialize video conference settings with default values.
++ *
++ * @param opt		The settings to be initialized.
++ */
++PJ_DECL(void) pjmedia_vid_conf_setting_default(pjmedia_vid_conf_setting *opt);
++
++
++/**
++ * Create a video conference bridge.
++ *
++ * @param pool		The memory pool.
++ * @param opt		The video conference settings.
++ * @param p_vid_conf	Pointer to receive the video conference bridge.
++ *
++ * @return		PJ_SUCCESS on success, or the appropriate
++ *			error code.
++ */
++PJ_DECL(pj_status_t) pjmedia_vid_conf_create(
++					pj_pool_t *pool,
++					const pjmedia_vid_conf_setting *opt,
++					pjmedia_vid_conf **p_vid_conf);
++
++
++/**
++ * Destroy video conference bridge.
++ *
++ * @param vid_conf	The video conference bridge.
++ *
++ * @return		PJ_SUCCESS on success.
++ */
++PJ_DECL(pj_status_t) pjmedia_vid_conf_destroy(pjmedia_vid_conf *vid_conf);
++
++
++/**
++ * Add a media port to the video conference bridge.
++ *
++ * @param vid_conf	The video conference bridge.
++ * @param pool		The memory pool, the brige will create new pool
++ *			based on this pool factory for this media port.
++ * @param port		The media port to be added.
++ * @param name		Name to be assigned to the slot. If not set, it will
++ *			be set to the media port name.
++ * @param opt		The option, for future use, currently this must
++ *			be NULL.
++ * @param p_slot	Pointer to receive the slot index of the port in
++ *			the conference bridge.
++ *
++ * @return		PJ_SUCCESS on success, or the appropriate error
++ *			code.
++ */
++PJ_DECL(pj_status_t) pjmedia_vid_conf_add_port(pjmedia_vid_conf *vid_conf,
++					       pj_pool_t *pool,
++					       pjmedia_port *port,
++					       const pj_str_t *name,
++					       void *opt,
++					       unsigned *p_slot);
++
++
++/**
++ * Remove a media port from the video conference bridge.
++ *
++ * @param vid_conf	The video conference bridge.
++ * @param slot		The media port's slot index to be removed.
++ *
++ * @return		PJ_SUCCESS on success, or the appropriate error
++ *			code.
++ */
++PJ_DECL(pj_status_t) pjmedia_vid_conf_remove_port(pjmedia_vid_conf *vid_conf,
++						  unsigned slot);
++
++
++/**
++ * Get number of ports currently registered in the video conference bridge.
++ *
++ * @param vid_conf	The video conference bridge.
++ *
++ * @return		Number of ports currently registered to the video
++ *			conference bridge.
++ */
++PJ_DECL(unsigned) pjmedia_vid_conf_get_port_count(pjmedia_vid_conf *vid_conf);
++
++
++/**
++ * Enumerate occupied slots in the video conference bridge.
++ *
++ * @param conf		The video conference bridge.
++ * @param slots		Array of slot to be filled in.
++ * @param count		On input, specifies the maximum number of slot
++ *			in the array. On return, it will be filled with
++ *			the actual number of slot.
++ *
++ * @return		PJ_SUCCESS on success.
++ */
++PJ_DECL(pj_status_t) pjmedia_vid_conf_enum_ports(pjmedia_vid_conf *vid_conf,
++						 unsigned slots[],
++						 unsigned *count);
++
++
++/**
++ * Get port info.
++ *
++ * @param vid_conf	The video conference bridge.
++ * @param slot		Slot index.
++ * @param info		Pointer to receive the info.
++ *
++ * @return		PJ_SUCCESS on success.
++ */
++PJ_DECL(pj_status_t) pjmedia_vid_conf_get_port_info(
++					    pjmedia_vid_conf *vid_conf,
++					    unsigned slot,
++					    pjmedia_vid_conf_port_info *info);
++
++
++/**
++ * Enable unidirectional video flow from the specified source slot to
++ * the specified sink slot.
++ *
++ * @param conf		The video conference bridge.
++ * @param src_slot	Source slot.
++ * @param sink_slot	Sink slot.
++ * @param opt		The option, for future use, currently this must
++ *			be NULL.
++ *
++ * @return		PJ_SUCCES on success.
++ */
++PJ_DECL(pj_status_t) pjmedia_vid_conf_connect_port(
++					    pjmedia_vid_conf *vid_conf,
++					    unsigned src_slot,
++					    unsigned sink_slot,
++					    void *opt);
++
++
++/**
++ * Disconnect unidirectional video flow from the specified source to
++ * the specified sink slot.
++ *
++ * @param conf		The video conference bridge.
++ * @param src_slot	Source slot.
++ * @param sink_slot	Sink slot.
++ *
++ * @return		PJ_SUCCESS on success.
++ */
++PJ_DECL(pj_status_t) pjmedia_vid_conf_disconnect_port(
++					    pjmedia_vid_conf *vid_conf,
++					    unsigned src_slot,
++					    unsigned sink_slot);
++
++
++PJ_END_DECL
++
++/**
++ * @}
++ */
++
++#endif /* __PJMEDIA_VID_CONF_H__ */
+diff --git a/pjmedia/include/pjmedia/vid_port.h b/pjmedia/include/pjmedia/vid_port.h
+index 9624354..1a47109 100644
+--- a/pjmedia/include/pjmedia/vid_port.h
++++ b/pjmedia/include/pjmedia/vid_port.h
+@@ -153,6 +153,21 @@ pjmedia_vid_port_set_clock_src( pjmedia_vid_port *vid_port,
+                                 pjmedia_clock_src *clocksrc );
+ 
+ /**
++ * Subscribe media event notifications from the specified media port.
++ * Sample use case is that renderer video port needs to monitor stream port
++ * events so renderer can adjust its param whenever stream port detects
++ * format change.
++ *
++ * @param vid_port	The video port.
++ * @param port		The media port whose events to be monitored.
++ *
++ * @return		PJ_SUCCESS on success or the appropriate error code.
++ */
++PJ_DECL(pj_status_t) pjmedia_vid_port_subscribe_event(
++						pjmedia_vid_port *vid_port,
++						pjmedia_port *port);
++
++/**
+  * Connect the video port to a downstream (slave) media port. This operation
+  * is only valid for video ports created with active interface selected.
+  * Connecting a passive video port may raise an assertion.
+diff --git a/pjmedia/src/pjmedia/converter.c b/pjmedia/src/pjmedia/converter.c
+index 1843a0a..bff5d9e 100644
+--- a/pjmedia/src/pjmedia/converter.c
++++ b/pjmedia/src/pjmedia/converter.c
+@@ -191,4 +191,20 @@ PJ_DEF(void) pjmedia_converter_destroy(pjmedia_converter *cv)
+     (*cv->op->destroy)(cv);
+ }
+ 
++PJ_DEF(pj_status_t) pjmedia_converter_convert2(
++				    pjmedia_converter	    *cv,
++				    pjmedia_frame	    *src_frame,
++				    const pjmedia_rect_size *src_frame_size,
++				    const pjmedia_coord	    *src_pos,
++				    pjmedia_frame	    *dst_frame,
++				    const pjmedia_rect_size *dst_frame_size,
++				    const pjmedia_coord	    *dst_pos,
++				    void		    *param)
++{
++    if (!cv->op->convert2)
++	return PJ_ENOTSUP;
++
++    return (*cv->op->convert2)(cv, src_frame, src_frame_size, src_pos,
++			       dst_frame, dst_frame_size, dst_pos, param);
++}
+ 
+diff --git a/pjmedia/src/pjmedia/converter_libswscale.c b/pjmedia/src/pjmedia/converter_libswscale.c
+index 6e2d5fc..dc61b96 100644
+--- a/pjmedia/src/pjmedia/converter_libswscale.c
++++ b/pjmedia/src/pjmedia/converter_libswscale.c
+@@ -33,6 +33,16 @@ static void factory_destroy_factory(pjmedia_converter_factory *cf);
+ static pj_status_t libswscale_conv_convert(pjmedia_converter *converter,
+ 					   pjmedia_frame *src_frame,
+ 					   pjmedia_frame *dst_frame);
++static pj_status_t libswscale_conv_convert2(
++				    pjmedia_converter	    *converter,
++				    pjmedia_frame	    *src_frame,
++				    const pjmedia_rect_size *src_frame_size,
++				    const pjmedia_coord	    *src_pos,
++				    pjmedia_frame	    *dst_frame,
++				    const pjmedia_rect_size *dst_frame_size,
++				    const pjmedia_coord	    *dst_pos,
++				    pjmedia_converter_convert_setting
++							    *param);
+ static void libswscale_conv_destroy(pjmedia_converter *converter);
+ 
+ 
+@@ -59,7 +69,8 @@ static pjmedia_converter_factory_op libswscale_factory_op =
+ static pjmedia_converter_op liswscale_converter_op =
+ {
+     &libswscale_conv_convert,
+-    &libswscale_conv_destroy
++    &libswscale_conv_destroy,
++    &libswscale_conv_convert2
+ };
+ 
+ static pj_status_t factory_create_converter(pjmedia_converter_factory *cf,
+@@ -164,6 +175,75 @@ static pj_status_t libswscale_conv_convert(pjmedia_converter *converter,
+     return PJ_SUCCESS;
+ }
+ 
++static pj_status_t libswscale_conv_convert2(
++				    pjmedia_converter	    *converter,
++				    pjmedia_frame	    *src_frame,
++				    const pjmedia_rect_size *src_frame_size,
++				    const pjmedia_coord	    *src_pos,
++				    pjmedia_frame	    *dst_frame,
++				    const pjmedia_rect_size *dst_frame_size,
++				    const pjmedia_coord	    *dst_pos,
++				    pjmedia_converter_convert_setting
++							    *param)
++{
++    struct ffmpeg_converter *fcv = (struct ffmpeg_converter*)converter;
++    struct fmt_info *src = &fcv->src,
++	            *dst = &fcv->dst;
++    int h;
++    unsigned j;
++    pjmedia_rect_size orig_src_size;
++    pjmedia_rect_size orig_dst_size;
++
++    PJ_UNUSED_ARG(param);
++
++    /* Save original conversion sizes */
++    orig_src_size = src->apply_param.size;
++    orig_dst_size = dst->apply_param.size;
++
++    /* Set the first act buffer from src frame, and overwrite size. */
++    src->apply_param.buffer = src_frame->buf;
++    src->apply_param.size   = *src_frame_size;
++    (*src->fmt_info->apply_fmt)(src->fmt_info, &src->apply_param);
++
++    /* Set the last act buffer from dst frame, and overwrite size. */
++    dst->apply_param.buffer = dst_frame->buf;
++    dst->apply_param.size   = *dst_frame_size;
++    (*dst->fmt_info->apply_fmt)(dst->fmt_info, &dst->apply_param);
++
++    for (j = 0; j < src->fmt_info->plane_cnt; ++j) {
++	pjmedia_video_apply_fmt_param *ap = &src->apply_param;
++	int y = src_pos->y * ap->plane_bytes[j] / ap->strides[j] /
++		ap->size.h;
++	ap->planes[j] += y * ap->strides[j] +
++			 src_pos->x * ap->strides[j] / ap->size.w;
++    }
++
++    for (j = 0; j < dst->fmt_info->plane_cnt; ++j) {
++	pjmedia_video_apply_fmt_param *ap = &dst->apply_param;
++	int y = dst_pos->y * ap->plane_bytes[j] / ap->strides[j] /
++		ap->size.h;
++	ap->planes[j] += y * ap->strides[j] +
++			 dst_pos->x * ap->strides[j] / ap->size.w;
++    }
++
++    /* Return back the original conversion size */
++    src->apply_param.size = orig_src_size;
++    dst->apply_param.size = orig_dst_size;
++
++    h = sws_scale(fcv->sws_ctx,
++	          (const uint8_t* const *)src->apply_param.planes,
++	          src->apply_param.strides,
++		  0, src->apply_param.size.h,
++		  dst->apply_param.planes, dst->apply_param.strides);
++
++    //sws_scale() return value can't be trusted? There are cases when
++    //sws_scale() returns zero but conversion seems to work okay.
++    //return h==(int)dst->apply_param.size.h ? PJ_SUCCESS : PJ_EUNKNOWN;
++    PJ_UNUSED_ARG(h);
++
++    return PJ_SUCCESS;
++}
++
+ static void libswscale_conv_destroy(pjmedia_converter *converter)
+ {
+     struct ffmpeg_converter *fcv = (struct ffmpeg_converter*)converter;
+diff --git a/pjmedia/src/pjmedia/converter_libyuv.c b/pjmedia/src/pjmedia/converter_libyuv.c
+index 29aedac..2b0f540 100644
+--- a/pjmedia/src/pjmedia/converter_libyuv.c
++++ b/pjmedia/src/pjmedia/converter_libyuv.c
+@@ -36,6 +36,16 @@ static pj_status_t libyuv_conv_convert(pjmedia_converter *converter,
+ 				       pjmedia_frame *src_frame,
+ 				       pjmedia_frame *dst_frame);
+ 
++static pj_status_t libyuv_conv_convert2(
++				    pjmedia_converter	    *converter,
++				    pjmedia_frame	    *src_frame,
++				    const pjmedia_rect_size *src_frame_size,
++				    const pjmedia_coord	    *src_pos,
++				    pjmedia_frame	    *dst_frame,
++				    const pjmedia_rect_size *dst_frame_size,
++				    const pjmedia_coord	    *dst_pos,
++				    void		    *param);
++
+ static void libyuv_conv_destroy(pjmedia_converter *converter);
+ 
+ static pjmedia_converter_factory_op libyuv_factory_op =
+@@ -47,7 +57,8 @@ static pjmedia_converter_factory_op libyuv_factory_op =
+ static pjmedia_converter_op libyuv_converter_op =
+ {
+     &libyuv_conv_convert,
+-    &libyuv_conv_destroy
++    &libyuv_conv_destroy,
++    &libyuv_conv_convert2
+ };
+ 
+ typedef struct fmt_info
+@@ -346,7 +357,7 @@ static int set_converter_act(pj_uint32_t src_id,
+     pj_bool_t need_scale = PJ_FALSE;
+ 
+     /* Convert to I420 or BGRA if needed. */
+-    if ((src_id != PJMEDIA_FORMAT_I420) || (src_id != PJMEDIA_FORMAT_BGRA)) {
++    if ((src_id != PJMEDIA_FORMAT_I420) && (src_id != PJMEDIA_FORMAT_BGRA)) {
+ 	pj_uint32_t next_id = get_next_conv_fmt(src_id);
+         if (get_converter_map(src_id, next_id, src_size, dst_size, ++act_num, 
+                               act) != PJ_SUCCESS)
+@@ -358,8 +369,12 @@ static int set_converter_act(pj_uint32_t src_id,
+     }
+ 
+     /* Scale if needed */
+-    need_scale = ((src_size->w != dst_size->w) ||
+-		  (src_size->h != dst_size->h));
++    //need_scale = ((src_size->w != dst_size->w) ||
++		  //(src_size->h != dst_size->h));
++
++    // Always enable scale, as this can be used for rendering a region of
++    // a frame to another region of similar/another frame.
++    need_scale = PJ_TRUE;
+ 
+     if (need_scale) {
+ 	if (get_converter_map(current_id, current_id, src_size, dst_size, 
+@@ -622,6 +637,168 @@ static pj_status_t libyuv_conv_convert(pjmedia_converter *converter,
+     return PJ_SUCCESS;
+ }
+ 
++static pj_status_t libyuv_conv_convert2(
++				    pjmedia_converter	    *converter,
++				    pjmedia_frame	    *src_frame,
++				    const pjmedia_rect_size *src_frame_size,
++				    const pjmedia_coord	    *src_pos,
++				    pjmedia_frame	    *dst_frame,
++				    const pjmedia_rect_size *dst_frame_size,
++				    const pjmedia_coord	    *dst_pos,
++				    pjmedia_converter_convert_setting
++							    *param)
++{
++    struct libyuv_converter *lconv = (struct libyuv_converter*)converter;
++    int i = 0;
++    fmt_info *src_info = &lconv->act[0].src_fmt_info;
++    fmt_info *dst_info = &lconv->act[lconv->act_num-1].dst_fmt_info;
++    pjmedia_rect_size orig_src_size;
++    pjmedia_rect_size orig_dst_size;
++
++    PJ_UNUSED_ARG(param);
++
++    /* Save original conversion sizes */
++    orig_src_size = src_info->apply_param.size;
++    orig_dst_size = dst_info->apply_param.size;
++
++    /* Set the first act buffer from src frame, and overwrite size. */
++    src_info->apply_param.buffer = src_frame->buf;
++    src_info->apply_param.size   = *src_frame_size;
++
++    /* Set the last act buffer from dst frame, and overwrite size. */
++    dst_info->apply_param.buffer = dst_frame->buf;
++    dst_info->apply_param.size   = *dst_frame_size;
++
++    for (i=0;i<lconv->act_num;++i) {
++	/* Use destination info as the source info for the next act. */
++	struct fmt_info *src_fmt_info = (i==0)? src_info : 
++					&lconv->act[i-1].dst_fmt_info;
++
++	struct fmt_info *dst_fmt_info = &lconv->act[i].dst_fmt_info;	
++	
++	(*src_fmt_info->vid_fmt_info->apply_fmt)(src_fmt_info->vid_fmt_info, 
++						 &src_fmt_info->apply_param);
++
++	(*dst_fmt_info->vid_fmt_info->apply_fmt)(dst_fmt_info->vid_fmt_info, 
++						 &dst_fmt_info->apply_param);
++
++	/* For first and last acts, apply plane buffer offset and return back
++	 * the original sizes.
++	 */
++	if (i == 0) {
++	    pjmedia_video_apply_fmt_param *ap = &src_fmt_info->apply_param;
++	    unsigned j;
++	    for (j = 0; j < src_fmt_info->vid_fmt_info->plane_cnt; ++j) {
++		int y = src_pos->y * ap->plane_bytes[j] / ap->strides[j] /
++			ap->size.h;
++		ap->planes[j] += y * ap->strides[j] + src_pos->x *
++				 ap->strides[j] / ap->size.w;
++	    }
++	    ap->size = orig_src_size;
++	}
++	if (i == lconv->act_num-1) {
++	    pjmedia_video_apply_fmt_param *ap = &dst_fmt_info->apply_param;
++	    unsigned j;
++	    for (j = 0; j < dst_fmt_info->vid_fmt_info->plane_cnt; ++j)
++	    {
++		int y = dst_pos->y * ap->plane_bytes[j] / ap->strides[j] /
++			ap->size.h;
++		ap->planes[j] += y * ap->strides[j] + dst_pos->x *
++				 ap->strides[j] / ap->size.w;
++	    }
++	    ap->size = orig_dst_size;
++	}
++
++	switch (lconv->act[i].act_type) {
++	case CONV_PACK_TO_PACK:
++	    (*lconv->act[i].method.conv_pack_to_pack)(
++			      (const uint8*)src_fmt_info->apply_param.planes[0],
++			      src_fmt_info->apply_param.strides[0],
++			      dst_fmt_info->apply_param.planes[0], 
++			      dst_fmt_info->apply_param.strides[0],
++			      dst_fmt_info->apply_param.size.w, 
++			      dst_fmt_info->apply_param.size.h);
++	    break;
++	case CONV_PACK_TO_PLANAR:
++	    (*lconv->act[i].method.conv_pack_to_planar)(
++			      (const uint8*)src_fmt_info->apply_param.planes[0],
++			      src_fmt_info->apply_param.strides[0],
++			      dst_fmt_info->apply_param.planes[0], 
++			      dst_fmt_info->apply_param.strides[0],
++			      dst_fmt_info->apply_param.planes[1], 
++			      dst_fmt_info->apply_param.strides[1],
++			      dst_fmt_info->apply_param.planes[2], 
++			      dst_fmt_info->apply_param.strides[2],
++			      dst_fmt_info->apply_param.size.w, 
++			      dst_fmt_info->apply_param.size.h);
++	    break;
++	case CONV_PLANAR_TO_PACK:
++	    (*lconv->act[i].method.conv_planar_to_pack)(
++			      (const uint8*)src_fmt_info->apply_param.planes[0],
++			      src_fmt_info->apply_param.strides[0],
++			      (const uint8*)src_fmt_info->apply_param.planes[1],
++			      src_fmt_info->apply_param.strides[1],
++			      (const uint8*)src_fmt_info->apply_param.planes[2],
++			      src_fmt_info->apply_param.strides[2],
++			      dst_fmt_info->apply_param.planes[0], 
++			      dst_fmt_info->apply_param.strides[0],
++			      dst_fmt_info->apply_param.size.w, 
++			      dst_fmt_info->apply_param.size.h);
++	    break;
++	case CONV_PLANAR_TO_PLANAR:
++	    (*lconv->act[i].method.conv_planar_to_planar)(
++			      (const uint8*)src_fmt_info->apply_param.planes[0],
++			      src_fmt_info->apply_param.strides[0],
++			      (const uint8*)src_fmt_info->apply_param.planes[1],
++			      src_fmt_info->apply_param.strides[1],
++			      (const uint8*)src_fmt_info->apply_param.planes[2],
++			      src_fmt_info->apply_param.strides[2],
++			      dst_fmt_info->apply_param.planes[0], 
++			      dst_fmt_info->apply_param.strides[0],
++			      dst_fmt_info->apply_param.planes[1], 
++			      dst_fmt_info->apply_param.strides[1],
++			      dst_fmt_info->apply_param.planes[2], 
++			      dst_fmt_info->apply_param.strides[2],
++			      dst_fmt_info->apply_param.size.w, 
++			      dst_fmt_info->apply_param.size.h);
++	    break;
++	case SCALE_PACK:
++	    (*lconv->act[i].method.scale_pack)(
++			      (const uint8*)src_fmt_info->apply_param.planes[0],
++			      src_fmt_info->apply_param.strides[0],
++			      src_fmt_info->apply_param.size.w,
++			      src_fmt_info->apply_param.size.h,
++			      (uint8*)dst_fmt_info->apply_param.planes[0],
++			      dst_fmt_info->apply_param.strides[0],
++			      dst_fmt_info->apply_param.size.w,
++			      dst_fmt_info->apply_param.size.h,
++			      LIBYUV_FILTER_MODE);
++	    break;	
++	case SCALE_PLANAR:
++	    (*lconv->act[i].method.scale_planar)(
++			      (const uint8*)src_fmt_info->apply_param.planes[0],
++			      src_fmt_info->apply_param.strides[0],
++			      (const uint8*)src_fmt_info->apply_param.planes[1],
++			      src_fmt_info->apply_param.strides[1],
++			      (const uint8*)src_fmt_info->apply_param.planes[2],
++			      src_fmt_info->apply_param.strides[2],
++			      src_fmt_info->apply_param.size.w,
++			      src_fmt_info->apply_param.size.h,
++			      (uint8*)dst_fmt_info->apply_param.planes[0],
++			      dst_fmt_info->apply_param.strides[0],
++			      (uint8*)dst_fmt_info->apply_param.planes[1],
++			      dst_fmt_info->apply_param.strides[1],
++			      (uint8*)dst_fmt_info->apply_param.planes[2],
++			      dst_fmt_info->apply_param.strides[2],
++			      dst_fmt_info->apply_param.size.w,
++			      dst_fmt_info->apply_param.size.h,
++			      LIBYUV_FILTER_MODE);
++	    break;	
++	};	
++    }    
++    return PJ_SUCCESS;
++}
++
+ static void libyuv_conv_destroy(pjmedia_converter *converter)
+ {
+     PJ_UNUSED_ARG(converter);
+diff --git a/pjmedia/src/pjmedia/vid_conf.c b/pjmedia/src/pjmedia/vid_conf.c
+new file mode 100644
+index 0000000..9c4b02b
+--- /dev/null
++++ b/pjmedia/src/pjmedia/vid_conf.c
+@@ -0,0 +1,1035 @@
++/* $Id$ */
++/* 
++ * Copyright (C) 2019 Teluu Inc. (http://www.teluu.com)
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA 
++ */
++#include <pjmedia/vid_conf.h>
++#include <pjmedia/clock.h>
++#include <pjmedia/converter.h>
++#include <pjmedia/errno.h>
++#include <pj/array.h>
++#include <pj/log.h>
++#include <pj/os.h>
++
++#if defined(PJMEDIA_HAS_VIDEO) && (PJMEDIA_HAS_VIDEO != 0)
++
++
++#define CONF_NAME	"vidconf"
++#define CONF_SIGN	PJMEDIA_SIG_VID_CONF
++
++/* If set, conf will stop clock when there is no ports connection. However,
++ * this may cause stuck if port remove/disconnect is called from the clock
++ * callback. So better disable this for now.
++ */
++#define AUTO_STOP_CLOCK 0
++
++/* Clockrate for video timestamp unit */
++#define TS_CLOCK_RATE	90000
++
++#define THIS_FILE	"vid_conf.c"
++#define TRACE_(x)	PJ_LOG(5,x)
++
++
++/*
++ * Conference bridge.
++ */
++struct pjmedia_vid_conf
++{
++    pjmedia_vid_conf_setting opt;	/**< Settings.			    */
++    unsigned		  port_cnt;	/**< Current number of ports.	    */
++    unsigned		  connect_cnt;	/**< Total number of connections    */
++    pj_mutex_t		 *mutex;	/**< Conference mutex.		    */
++    struct vconf_port	**ports;	/**< Array of ports.		    */
++    pjmedia_clock	 *clock;	/**< Clock.			    */
++};
++
++
++/*
++ * Rendering state: converter, layout settings, etc.
++ */
++typedef struct render_state
++{
++    pjmedia_format_id	src_fmt_id;	/**< Source format ID.		    */
++    pjmedia_rect_size	src_frame_size;	/**< Source frame size.		    */
++    pjmedia_rect	src_rect;	/**< Source region to be rendered.  */
++
++    pjmedia_format_id	dst_fmt_id;	/**< Destination format ID.	    */
++    pjmedia_rect_size	dst_frame_size;	/**< Destination frame size.	    */
++    pjmedia_rect	dst_rect;	/**< Destination region.	    */
++
++    pjmedia_converter	*converter;	/**< Converter.			    */
++
++} render_state;
++
++
++/*
++ * Conference bridge port.
++ */
++typedef struct vconf_port
++{
++    pj_pool_t		*pool;		/**< Pool.			    */
++    unsigned		 idx;		/**< Port index.		    */
++    pj_str_t		 name;		/**< Port name.			    */
++    pjmedia_port	*port;		/**< Video port.		    */
++    pj_uint32_t		 ts_interval;	/**< Port put/get interval.	    */
++    pj_timestamp	 ts_next;	/**< Time for next put/get_frame(). */
++    void		*get_buf;	/**< Buffer for get_frame().	    */
++    pj_size_t		 get_buf_size;	/**< Buffer size for get_frame().   */
++    void		*put_buf;	/**< Buffer for put_frame().	    */
++    pj_size_t		 put_buf_size;	/**< Buffer size for put_frame().   */
++
++    unsigned		 listener_cnt;	/**< Number of listeners.	    */
++    unsigned		*listener_slots;/**< Array of listeners (for info). */
++
++    unsigned		 transmitter_cnt;/**<Number of transmitters.	    */
++    unsigned		*transmitter_slots;/**< Array of transmitters.	    */
++    pj_pool_t	       **render_pool;	/**< Array of pool for render state */
++    render_state       **render_states;	/**< Array of render_state (one for
++					     each transmitter).		    */
++} vconf_port;
++
++
++/* Prototypes */
++static void on_clock_tick(const pj_timestamp *ts, void *user_data);
++static pj_status_t render_src_frame(vconf_port *src, vconf_port *sink,
++				    unsigned transmitter_idx);
++static void update_render_state(pjmedia_vid_conf *vid_conf, vconf_port *cp);
++static void cleanup_render_state(vconf_port *cp,
++				 unsigned transmitter_idx);
++
++
++/*
++ * Initialize video conference settings with default values.
++ */
++PJ_DEF(void) pjmedia_vid_conf_setting_default(pjmedia_vid_conf_setting *opt)
++{
++    pj_bzero(opt, sizeof(*opt));
++    opt->max_slot_cnt = 32;
++    opt->frame_rate = 60;
++}
++
++
++/*
++ * Create a video conference bridge.
++ */
++PJ_DEF(pj_status_t) pjmedia_vid_conf_create(
++					pj_pool_t *pool,
++					const pjmedia_vid_conf_setting *opt,
++					pjmedia_vid_conf **p_vid_conf)
++{
++    pjmedia_vid_conf *vid_conf;
++    pjmedia_clock_param clock_param;
++    pj_status_t status;
++
++    PJ_ASSERT_RETURN(pool && p_vid_conf, PJ_EINVAL);
++
++    /* Allocate conf structure */
++    vid_conf = PJ_POOL_ZALLOC_T(pool, pjmedia_vid_conf);
++    PJ_ASSERT_RETURN(vid_conf, PJ_ENOMEM);
++
++    /* Init settings */
++    if (opt) {
++	vid_conf->opt = *opt;
++    } else {
++	pjmedia_vid_conf_setting_default(&vid_conf->opt);
++    }
++
++    /* Allocate ports */
++    vid_conf->ports = (vconf_port**)
++		      pj_pool_zalloc(pool, vid_conf->opt.max_slot_cnt *
++					   sizeof(vconf_port*));
++    PJ_ASSERT_RETURN(vid_conf->ports, PJ_ENOMEM);
++
++    /* Create mutex */
++    status = pj_mutex_create_recursive(pool, CONF_NAME, &vid_conf->mutex);
++    if (status != PJ_SUCCESS) {
++	pjmedia_vid_conf_destroy(vid_conf);
++	return status;
++    }
++
++    /* Create clock */
++    pj_bzero(&clock_param, sizeof(clock_param));
++    clock_param.clock_rate = TS_CLOCK_RATE;
++    clock_param.usec_interval = 1000000 / vid_conf->opt.frame_rate;
++    status = pjmedia_clock_create2(pool, &clock_param, 0, &on_clock_tick,
++				   vid_conf, &vid_conf->clock);
++    if (status != PJ_SUCCESS) {
++	pjmedia_vid_conf_destroy(vid_conf);
++	return status;
++    }
++
++    /* Done */
++    *p_vid_conf = vid_conf;
++
++    PJ_LOG(5,(THIS_FILE, "Created video conference bridge with %d ports",
++	      vid_conf->opt.max_slot_cnt));
++
++    return PJ_SUCCESS;
++}
++
++
++/*
++ * Destroy video conference bridge.
++ */
++PJ_DEF(pj_status_t) pjmedia_vid_conf_destroy(pjmedia_vid_conf *vid_conf)
++{
++    unsigned i;
++
++    PJ_ASSERT_RETURN(vid_conf, PJ_EINVAL);
++
++    /* Destroy clock */
++    if (vid_conf->clock) {
++	pjmedia_clock_destroy(vid_conf->clock);
++	vid_conf->clock = NULL;
++    }
++
++    /* Remove any registered ports (at least to cleanup their pool) */
++    for (i=0; i < vid_conf->opt.max_slot_cnt; ++i) {
++	pjmedia_vid_conf_remove_port(vid_conf, i);
++    }
++
++    /* Destroy mutex */
++    if (vid_conf->mutex) {
++	pj_mutex_destroy(vid_conf->mutex);
++	vid_conf->mutex = NULL;
++    }
++
++    PJ_LOG(5,(THIS_FILE, "Video conference bridge destroyed"));
++
++    return PJ_SUCCESS;
++}
++
++
++/*
++ * Add a media port to the video conference bridge.
++ */
++PJ_DEF(pj_status_t) pjmedia_vid_conf_add_port( pjmedia_vid_conf *vid_conf,
++					       pj_pool_t *parent_pool,
++					       pjmedia_port *port,
++					       const pj_str_t *name,
++					       void *opt,
++					       unsigned *p_slot)
++{
++    pj_pool_t *pool;
++    vconf_port *cport;
++    unsigned index;
++
++    PJ_ASSERT_RETURN(vid_conf && parent_pool && port, PJ_EINVAL);
++    PJ_ASSERT_RETURN(port->info.fmt.type==PJMEDIA_TYPE_VIDEO &&
++		     port->info.fmt.detail_type==PJMEDIA_FORMAT_DETAIL_VIDEO,
++		     PJ_EINVAL);
++    PJ_UNUSED_ARG(opt);
++
++    /* If name is not specified, use the port's name */
++    if (!name)
++	name = &port->info.name;
++
++    pj_mutex_lock(vid_conf->mutex);
++
++    if (vid_conf->port_cnt >= vid_conf->opt.max_slot_cnt) {
++	pj_assert(!"Too many ports");
++	pj_mutex_unlock(vid_conf->mutex);
++	return PJ_ETOOMANY;
++    }
++
++    /* Find empty port in the conference bridge. */
++    for (index=0; index < vid_conf->opt.max_slot_cnt; ++index) {
++	if (vid_conf->ports[index] == NULL)
++	    break;
++    }
++    pj_assert(index != vid_conf->opt.max_slot_cnt);
++
++    /* Create pool */
++    pool = pj_pool_create(parent_pool->factory, name->ptr, 500, 500, NULL);
++    PJ_ASSERT_RETURN(pool, PJ_ENOMEM);
++
++    /* Create port. */
++    cport = PJ_POOL_ZALLOC_T(pool, vconf_port);
++    PJ_ASSERT_RETURN(cport, PJ_ENOMEM);
++
++    /* Set pool, port, index, and name */
++    cport->pool = pool;
++    cport->port = port;
++    cport->idx  = index;
++    pj_strdup_with_null(pool, &cport->name, name);
++
++    /* Init put/get_frame() intervals */
++    {
++	pjmedia_ratio *fps = &port->info.fmt.det.vid.fps;
++	pj_uint32_t vconf_interval = (pj_uint32_t)
++				     (TS_CLOCK_RATE * 1.0 /
++				     vid_conf->opt.frame_rate);
++	cport->ts_interval = (pj_uint32_t)(TS_CLOCK_RATE * 1.0 /
++					   fps->num * fps->denum);
++
++	/* Normalize the interval */
++	if (cport->ts_interval < vconf_interval) {
++	    cport->ts_interval = vconf_interval;
++	    PJ_LOG(3,(THIS_FILE, "Warning: frame rate of port %s is higher "
++				 "than video conference bridge (%d > %d)",
++				 name->ptr, (int)(fps->num/fps->denum),
++				 vid_conf->opt.frame_rate));
++	}
++    }
++
++    /* Allocate buffer for put/get_frame() */
++    {
++	const pjmedia_video_format_info *vfi;
++	pjmedia_video_apply_fmt_param vafp;
++	pj_status_t status;
++
++	vfi = pjmedia_get_video_format_info(NULL, port->info.fmt.id);
++	if (!vfi) {
++	    PJ_LOG(4,(THIS_FILE, "pjmedia_vid_conf_add_port(): "
++				 "unrecognized format %04X",
++				 port->info.fmt.id));
++	    return PJMEDIA_EBADFMT;
++	}
++
++	pj_bzero(&vafp, sizeof(vafp));
++	vafp.size = port->info.fmt.det.vid.size;
++	status = (*vfi->apply_fmt)(vfi, &vafp);
++	if (status != PJ_SUCCESS) {
++	    PJ_LOG(4,(THIS_FILE, "pjmedia_vid_conf_add_port(): "
++				 "Failed to apply format %04X",
++				 port->info.fmt.id));
++	    return status;
++	}
++	if (port->put_frame) {
++	    cport->put_buf_size = vafp.framebytes;
++	    cport->put_buf = pj_pool_zalloc(cport->pool, cport->put_buf_size);
++	}
++	if (port->get_frame) {
++	    cport->get_buf_size = vafp.framebytes;
++	    cport->get_buf = pj_pool_zalloc(cport->pool, cport->get_buf_size);
++	}
++    }
++
++    /* Create listener array */
++    cport->listener_slots = (unsigned*)
++			    pj_pool_zalloc(pool,
++					   vid_conf->opt.max_slot_cnt *
++					   sizeof(unsigned));
++    PJ_ASSERT_RETURN(cport->listener_slots, PJ_ENOMEM);
++
++    /* Create transmitter array */
++    cport->transmitter_slots = (unsigned*)
++			       pj_pool_zalloc(pool,
++					      vid_conf->opt.max_slot_cnt *
++					      sizeof(unsigned));
++    PJ_ASSERT_RETURN(cport->transmitter_slots, PJ_ENOMEM);
++
++    /* Create pointer-to-render_state array */
++    cport->render_states = (render_state**)
++			   pj_pool_zalloc(pool,
++					  vid_conf->opt.max_slot_cnt *
++					  sizeof(render_state*));
++    PJ_ASSERT_RETURN(cport->render_states, PJ_ENOMEM);
++
++    /* Create pointer-to-render-pool array */
++    cport->render_pool = (pj_pool_t**)
++			 pj_pool_zalloc(pool,
++					vid_conf->opt.max_slot_cnt *
++					sizeof(pj_pool_t*));
++    PJ_ASSERT_RETURN(cport->render_pool, PJ_ENOMEM);
++
++    /* Register the conf port. */
++    vid_conf->ports[index] = cport;
++    vid_conf->port_cnt++;
++
++    PJ_LOG(4,(THIS_FILE,"Added port %d (%.*s)",
++	      index, (int)cport->name.slen, cport->name.ptr));
++
++    pj_mutex_unlock(vid_conf->mutex);
++
++    /* Done. */
++    if (p_slot) {
++	*p_slot = index;
++    }
++
++    return PJ_SUCCESS;
++}
++
++
++/*
++ * Remove a media port from the video conference bridge.
++ */
++PJ_DEF(pj_status_t) pjmedia_vid_conf_remove_port( pjmedia_vid_conf *vid_conf,
++						  unsigned slot)
++{
++    vconf_port *cport;
++
++    PJ_ASSERT_RETURN(vid_conf && slot<vid_conf->opt.max_slot_cnt, PJ_EINVAL);
++
++    pj_mutex_lock(vid_conf->mutex);
++
++    /* Port must be valid. */
++    cport = vid_conf->ports[slot];
++    if (cport == NULL) {
++	pj_mutex_unlock(vid_conf->mutex);
++	return PJ_EINVAL;
++    }
++
++    /* Disconnect slot -> listeners */
++    while (cport->listener_cnt) {
++	pjmedia_vid_conf_disconnect_port(vid_conf, slot,
++					 cport->listener_slots[0]);
++    }
++
++    /* Disconnect transmitters -> slot */
++    while (cport->transmitter_cnt) {
++	pjmedia_vid_conf_disconnect_port(vid_conf,
++					 cport->transmitter_slots[0], slot);
++    }
++
++    /* Remove the port. */
++    vid_conf->ports[slot] = NULL;
++    --vid_conf->port_cnt;
++
++    PJ_LOG(4,(THIS_FILE,"Removed port %d (%.*s)",
++	      slot, (int)cport->name.slen, cport->name.ptr));
++
++    /* Release pool */
++    pj_pool_safe_release(&cport->pool);
++
++    if (AUTO_STOP_CLOCK && vid_conf->connect_cnt == 0) {
++	pj_status_t status;
++
++	/* Warning: will stuck if this is called from the clock thread */
++	status = pjmedia_clock_stop(vid_conf->clock);
++	if (status != PJ_SUCCESS) {
++	    PJ_PERROR(4, (THIS_FILE, status, "Failed to stop clock"));
++	    return status;
++	}
++    }
++
++    pj_mutex_unlock(vid_conf->mutex);
++
++    return PJ_SUCCESS;
++}
++
++
++/*
++ * Get number of ports currently registered in the video conference bridge.
++ */
++PJ_DEF(unsigned) pjmedia_vid_conf_get_port_count(pjmedia_vid_conf *vid_conf)
++{
++    return vid_conf->port_cnt;
++}
++
++
++/*
++ * Enumerate occupied slots in the video conference bridge.
++ */
++PJ_DEF(pj_status_t) pjmedia_vid_conf_enum_ports( pjmedia_vid_conf *vid_conf,
++						 unsigned slots[],
++						 unsigned *count)
++{
++    unsigned i, tmp_count=0;
++
++    PJ_ASSERT_RETURN(vid_conf && slots && count, PJ_EINVAL);
++
++    /* Lock mutex */
++    pj_mutex_lock(vid_conf->mutex);
++
++    for (i=0; i<vid_conf->opt.max_slot_cnt && tmp_count<*count; ++i) {
++	if (!vid_conf->ports[i])
++	    continue;
++
++	slots[tmp_count++] = i;
++    }
++
++    /* Unlock mutex */
++    pj_mutex_unlock(vid_conf->mutex);
++
++    *count = tmp_count;
++
++    return PJ_SUCCESS;
++}
++
++
++/*
++ * Get port info.
++ */
++PJ_DEF(pj_status_t) pjmedia_vid_conf_get_port_info(
++					    pjmedia_vid_conf *vid_conf,
++					    unsigned slot,
++					    pjmedia_vid_conf_port_info *info)
++{
++    vconf_port *cp;
++
++    /* Check arguments */
++    PJ_ASSERT_RETURN(vid_conf && slot<vid_conf->opt.max_slot_cnt, PJ_EINVAL);
++
++    /* Lock mutex */
++    pj_mutex_lock(vid_conf->mutex);
++
++    /* Port must be valid. */
++    cp = vid_conf->ports[slot];
++    if (cp == NULL) {
++	pj_mutex_unlock(vid_conf->mutex);
++	return PJ_EINVAL;
++    }
++
++    info->slot = slot;
++    info->name = cp->name;
++    pjmedia_format_copy(&info->format, &cp->port->info.fmt);
++    info->listener_cnt = cp->listener_cnt;
++    info->listener_slots = cp->listener_slots;
++    info->transmitter_cnt = cp->transmitter_cnt;
++    info->transmitter_slots = cp->transmitter_slots;
++
++    /* Unlock mutex */
++    pj_mutex_unlock(vid_conf->mutex);
++
++    return PJ_SUCCESS;
++}
++
++
++/*
++ * Enable unidirectional video flow from the specified source slot to
++ * the specified sink slot.
++ */
++PJ_DEF(pj_status_t) pjmedia_vid_conf_connect_port(
++					    pjmedia_vid_conf *vid_conf,
++					    unsigned src_slot,
++					    unsigned sink_slot,
++					    void *opt)
++{
++    vconf_port *src_port, *dst_port;
++    unsigned i;
++
++    /* Check arguments */
++    PJ_ASSERT_RETURN(vid_conf &&
++		     src_slot<vid_conf->opt.max_slot_cnt && 
++		     sink_slot<vid_conf->opt.max_slot_cnt, PJ_EINVAL);
++    PJ_UNUSED_ARG(opt);
++
++    pj_mutex_lock(vid_conf->mutex);
++
++    /* Ports must be valid. */
++    src_port = vid_conf->ports[src_slot];
++    dst_port = vid_conf->ports[sink_slot];
++    if (!src_port || !src_port->port->get_frame ||
++	!dst_port || !dst_port->port->put_frame)
++    {
++	PJ_LOG(4,(THIS_FILE,"Failed connecting video ports, make sure that "
++			    "source has get_frame() & sink has put_frame()"));
++	pj_mutex_unlock(vid_conf->mutex);
++	return PJ_EINVAL;
++    }
++
++    /* Check if connection has been made */
++    for (i=0; i<src_port->listener_cnt; ++i) {
++	if (src_port->listener_slots[i] == sink_slot)
++	    break;
++    }
++
++    if (i == src_port->listener_cnt) {
++	src_port->listener_slots[src_port->listener_cnt] = sink_slot;
++	dst_port->transmitter_slots[dst_port->transmitter_cnt] = src_slot;
++	++src_port->listener_cnt;
++	++dst_port->transmitter_cnt;
++
++	update_render_state(vid_conf, dst_port);
++
++	++vid_conf->connect_cnt;
++	if (vid_conf->connect_cnt == 1) {
++	    pj_status_t status;
++	    status = pjmedia_clock_start(vid_conf->clock);
++	    if (status != PJ_SUCCESS) {
++		PJ_PERROR(4, (THIS_FILE, status, "Failed to start clock"));
++		return status;
++	    }
++	}
++
++	PJ_LOG(4,(THIS_FILE,"Port %d (%.*s) transmitting to port %d (%.*s)",
++		  src_slot,
++		  (int)src_port->name.slen,
++		  src_port->name.ptr,
++		  sink_slot,
++		  (int)dst_port->name.slen,
++		  dst_port->name.ptr));
++    }
++
++    pj_mutex_unlock(vid_conf->mutex);
++
++    return PJ_SUCCESS;
++}
++
++
++/*
++ * Disconnect unidirectional video flow from the specified source to
++ * the specified sink slot.
++ */
++PJ_DEF(pj_status_t) pjmedia_vid_conf_disconnect_port(
++					    pjmedia_vid_conf *vid_conf,
++					    unsigned src_slot,
++					    unsigned sink_slot)
++{
++    vconf_port *src_port, *dst_port;
++    unsigned i, j;
++
++    /* Check arguments */
++    PJ_ASSERT_RETURN(vid_conf &&
++		     src_slot<vid_conf->opt.max_slot_cnt && 
++		     sink_slot<vid_conf->opt.max_slot_cnt, PJ_EINVAL);
++
++    pj_mutex_lock(vid_conf->mutex);
++
++    /* Ports must be valid. */
++    src_port = vid_conf->ports[src_slot];
++    dst_port = vid_conf->ports[sink_slot];
++    if (!src_port || !dst_port) {
++	pj_mutex_unlock(vid_conf->mutex);
++	return PJ_EINVAL;
++    }
++
++    /* Check if connection has been made */
++    for (i=0; i<src_port->listener_cnt; ++i) {
++	if (src_port->listener_slots[i] == sink_slot)
++	    break;
++    }
++    for (j=0; j<dst_port->transmitter_cnt; ++j) {
++	if (dst_port->transmitter_slots[j] == src_slot)
++	    break;
++    }
++
++    if (i != src_port->listener_cnt) {
++	pj_assert(j != dst_port->transmitter_cnt);
++	pj_assert(src_port->listener_cnt > 0 && 
++		  src_port->listener_cnt < vid_conf->opt.max_slot_cnt);
++	pj_assert(dst_port->transmitter_cnt > 0 && 
++		  dst_port->transmitter_cnt < vid_conf->opt.max_slot_cnt);
++	pj_array_erase(src_port->listener_slots, sizeof(unsigned), 
++		       src_port->listener_cnt, i);
++	pj_array_erase(dst_port->transmitter_slots, sizeof(unsigned), 
++		       dst_port->transmitter_cnt, j);
++	--src_port->listener_cnt;
++	--dst_port->transmitter_cnt;
++
++	cleanup_render_state(src_port, j);
++	update_render_state(vid_conf, dst_port);
++
++	--vid_conf->connect_cnt;
++
++	if (AUTO_STOP_CLOCK && vid_conf->connect_cnt == 0) {
++	    pj_status_t status;
++	    /* Warning: will stuck if this is called from the clock thread */
++	    status = pjmedia_clock_stop(vid_conf->clock);
++	    if (status != PJ_SUCCESS) {
++		PJ_PERROR(4, (THIS_FILE, status, "Failed to stop clock"));
++		return status;
++	    }
++	}
++
++	PJ_LOG(4,(THIS_FILE,
++		  "Port %d (%.*s) stop transmitting to port %d (%.*s)",
++		  src_slot,
++		  (int)src_port->name.slen,
++		  src_port->name.ptr,
++		  sink_slot,
++		  (int)dst_port->name.slen,
++		  dst_port->name.ptr));
++    }
++
++    pj_mutex_unlock(vid_conf->mutex);
++
++    return PJ_SUCCESS;
++}
++
++
++/*
++ * Internal functions.
++ */
++
++static void on_clock_tick(const pj_timestamp *now, void *user_data)
++{
++    pjmedia_vid_conf *vid_conf = (pjmedia_vid_conf*)user_data;
++    unsigned ci, i;
++    pj_int32_t ts_diff;
++    pjmedia_frame frame;
++    pj_status_t status;
++
++    pj_mutex_lock(vid_conf->mutex);
++
++    /* Iterate all (sink) ports */
++    for (i=0, ci=0; i<vid_conf->opt.max_slot_cnt &&
++		    ci<vid_conf->port_cnt; ++i)
++    {
++	unsigned j;
++	pj_bool_t got_frame = PJ_FALSE;
++	pj_bool_t ts_incremented = PJ_FALSE;
++	vconf_port *sink = vid_conf->ports[i];
++
++	/* Skip empty port */
++	if (!sink)
++	    continue;
++
++	/* Increment occupied port counter */
++	++ci;
++
++	/* Skip non-sink port */
++	if (!sink->port->put_frame)
++	    continue;
++
++	if (sink->ts_next.u64 == 0)
++	    sink->ts_next = *now;
++
++	/* Skip if too early for put_frame(), note:
++	 * early = (now < ts_next)
++	 * But careful for timestamp wrapped around.
++	 */
++	ts_diff = pj_timestamp_diff32(&sink->ts_next, now);
++	if (ts_diff < 0 || ts_diff > TS_CLOCK_RATE)
++	    continue;
++
++	/* Clean up sink put buffer (should we draw black instead?) */
++	//pj_bzero(sink->put_buf, sink->put_buf_size);
++
++	/* Iterate transmitters of this sink port */
++	for (j=0; j < sink->transmitter_cnt; ++j) {
++	    vconf_port *src = vid_conf->ports[sink->transmitter_slots[j]];
++	    pj_int32_t src_ts_diff;
++
++	    if (src->ts_next.u64 == 0)
++		src->ts_next = *now;
++
++	    /* Is it time for src->get_frame()? yes, if (now >= ts_next) */
++	    src_ts_diff = pj_timestamp_diff32(&src->ts_next, now);
++	    if (src_ts_diff >= 0) {
++
++		/* Call src->get_frame().
++		 * Possible optimization: if this src only has one listener,
++		 * perhaps we can skip this src buffer and directly render it
++		 * to sink buffer (but still need buffer if conversion any).
++		 */
++		pj_bzero(&frame, sizeof(frame));
++		frame.type = PJMEDIA_FRAME_TYPE_VIDEO;
++		frame.timestamp = *now;
++		frame.buf = src->get_buf;
++		frame.size = src->get_buf_size;
++		status = pjmedia_port_get_frame(src->port, &frame);
++
++		/* Update next src put/get */
++		pj_add_timestamp32(&src->ts_next, src->ts_interval);
++		ts_incremented = src==sink;
++	    }
++
++	    /* Render src get buffer to sink put buffer (based on sink layout
++	     * settings, if any)
++	     */
++	    status = render_src_frame(src, sink, j);
++	    got_frame = PJ_TRUE;
++	}
++
++	/* Call sink->put_frame()
++	 * Note that if transmitter_cnt==0, we should still call put_frame()
++	 * with zero frame size, as sink may need to send keep-alive packets
++	 * and get timestamp update.
++	 */
++	pj_bzero(&frame, sizeof(frame));
++	frame.type = PJMEDIA_FRAME_TYPE_VIDEO;
++	frame.timestamp = *now;
++	if (got_frame) {
++	    frame.buf = sink->put_buf;
++	    frame.size = sink->put_buf_size;
++	}
++	status = pjmedia_port_put_frame(sink->port, &frame);
++
++	/* Update next put/get, careful that it may have been updated
++	 * if this port transmits to itself!
++	 */
++	if (!ts_incremented) {
++	    pj_add_timestamp32(&sink->ts_next, sink->ts_interval);
++	}
++    }
++
++    pj_mutex_unlock(vid_conf->mutex);
++}
++
++static pj_bool_t is_landscape(const pjmedia_rect_size *size) {
++    return (size->w >= size->h);
++}
++
++/* Adjust a frame size to match ratio specified in the ref_size.
++ * Either dimension of the frame may be cropped (but will never be
++ * expanded).
++ */
++static void match_ratio_crop(pjmedia_rect_size *size,
++			     const pjmedia_rect_size *ref_size)
++{
++    pjmedia_rect_size res;
++
++    /* Try match width first */
++    res.w = size->w;
++    res.h = ref_size->h * size->w / ref_size->w;
++    
++    /* If original height turns out to be shorther, match height */
++    if (size->h < res.h) {
++	res.w = ref_size->w * size->h / ref_size->h;
++	res.h = size->h;
++    }
++
++    *size = res;
++    return;
++}
++
++/* Cleanup rendering states, called when a transmitter is disconnected
++ * from a listener, or before reinit-ing rendering state of a listener
++ * when new connection has just been made.
++ */
++static void cleanup_render_state(vconf_port *cp,
++				 unsigned transmitter_idx)
++{
++    render_state *rs = cp->render_states[transmitter_idx];
++    if (rs && rs->converter)
++    {
++	pjmedia_converter_destroy(rs->converter);
++	rs->converter = NULL;
++    }
++    cp->render_states[transmitter_idx] = NULL;
++
++    if (cp->render_pool[transmitter_idx]) {
++	pj_pool_safe_release(&cp->render_pool[transmitter_idx]);
++    }
++}
++
++/* This function will do:
++ * - Recalculate layout setting, i.e: get video pos and size
++ *   for each transmitter
++ * - Check if converter is needed and setup it.
++ * - Those above things will be stored in render_state and
++ *   will be used by render_src_frame()
++ */
++static void update_render_state(pjmedia_vid_conf *vid_conf, vconf_port *cp)
++{
++    pjmedia_format_id fmt_id, tr_fmt_id[4];
++    pjmedia_rect_size size, tr_size[4];
++    unsigned i;
++    pj_status_t status;
++    char buf[5];
++
++    /* Nothing to render, just return */
++    if (cp->transmitter_cnt == 0)
++	return;
++
++    TRACE_((THIS_FILE, "Updating render state for port id %d (%d sources)..",
++	    cp->idx, cp->transmitter_cnt));
++
++    fmt_id = cp->port->info.fmt.id;
++    size   = cp->port->info.fmt.det.vid.size;
++    for (i = 0; i < cp->transmitter_cnt; ++i) {
++	vconf_port *tr = vid_conf->ports[cp->transmitter_slots[i]];
++
++	/* Cleanup render states & pool */
++	cleanup_render_state(cp, i);
++
++	/* Gather format ID, size of each transmitter */
++	tr_fmt_id[i] = tr->port->info.fmt.id;
++	tr_size[i]   = tr->port->info.fmt.det.vid.size;
++    }
++
++    /* If only one transmitter and it has matched format & size, just use
++     * plain memcpy(). Usually preview window or call stream window will
++     * have matched format & size with its source.
++     */
++    if (cp->transmitter_cnt == 1 && fmt_id == tr_fmt_id[0] &&
++	pj_memcmp(&size, &tr_size[0], sizeof(size))==0)
++    {
++	TRACE_((THIS_FILE, "This port only has single source with "
++			   "matched format & size, no conversion needed"));
++	return;
++    }
++
++    for (i = 0; i < cp->transmitter_cnt && i < 4; ++i) {
++	pj_pool_t *pool;
++	render_state *rs;
++	pjmedia_conversion_param cparam;
++
++	/* Create pool & render state */
++	pool = pj_pool_create(cp->pool->factory, "vconf_rdr", 128, 128, NULL);
++	cp->render_pool[i] = pool;
++	rs = cp->render_states[i] = PJ_POOL_ZALLOC_T(pool, render_state);
++
++	/* Setup format & frame */
++	rs->src_fmt_id = tr_fmt_id[i];
++	rs->dst_fmt_id = fmt_id;
++	rs->src_frame_size = tr_size[i];
++	rs->dst_frame_size = size;
++
++	/* For now, draw the whole source frame, will adjust ratio later */
++	rs->src_rect.coord.x = rs->src_rect.coord.y = 0;
++	rs->src_rect.size = tr_size[i];
++
++	/* Setup layout */
++	if (cp->transmitter_cnt == 1) {
++	    rs->dst_rect.coord.x = rs->dst_rect.coord.y = 0;
++	    rs->dst_rect.size = size;
++	} else if (cp->transmitter_cnt == 2) {
++	    if (is_landscape(&size)) {
++		/*
++		 *          |
++		 * Source 0 | Source 1
++		 *          |
++		 */
++		rs->dst_rect.coord.x = i * (size.w/2);
++		rs->dst_rect.coord.y = 0;
++		rs->dst_rect.size.w = size.w / 2;
++		rs->dst_rect.size.h = size.h;
++	    } else {
++		/*
++		 * Source 0
++		 * --------
++		 * Source 1
++		 */
++		rs->dst_rect.coord.x = 0;
++		rs->dst_rect.coord.y = i * (size.h/2);
++		rs->dst_rect.size.w = size.w;
++		rs->dst_rect.size.h = size.h / 2;
++	    }
++	} else if (cp->transmitter_cnt == 3) {
++	    if (is_landscape(&size)) {
++		/*
++		 *          | Source 1
++		 * Source 0 |---------
++		 *          | Source 2
++		 */
++		rs->dst_rect.coord.x = (i==0)? 0 : size.w/2;
++		rs->dst_rect.coord.y = (i!=2)? 0 : size.h/2;
++		rs->dst_rect.size.w = size.w / 2;
++		rs->dst_rect.size.h = (i==0)? size.h : size.h/2;
++	    } else {
++		/*
++		 * Source 0
++		 * --------
++		 * Source 1
++		 * --------
++		 * Source 2
++		 */
++		rs->dst_rect.coord.x = 0;
++		rs->dst_rect.coord.y = i * size.h/3;
++		rs->dst_rect.size.w = size.w;
++		rs->dst_rect.size.h = size.h/3;
++	    }
++	} else if (cp->transmitter_cnt == 4) {
++	    if (is_landscape(&size)) {
++		/*
++		 * Source 0 | Source 1
++		 * ---------|---------
++		 * Source 2 | Source 3
++		 */
++		rs->dst_rect.coord.x = (i%2==0)? 0 : size.w/2;
++		rs->dst_rect.coord.y = (i/2==0)? 0 : size.h/2;
++		rs->dst_rect.size.w = size.w/2;
++		rs->dst_rect.size.h = size.h/2;
++	    } else {
++		/*
++		 * Source 0
++		 * --------
++		 * Source 1
++		 * --------
++		 * Source 2
++		 * --------
++		 * Source 3
++		 */
++		rs->dst_rect.coord.x = 0;
++		rs->dst_rect.coord.y = i * size.h/4;
++		rs->dst_rect.size.w = size.w;
++		rs->dst_rect.size.h = size.h/4;
++	    }
++	}
++
++	/* Adjust source size to match aspect ratio of rendering space. */
++	match_ratio_crop(&rs->src_rect.size, &rs->dst_rect.size);
++
++	/* Now adjust source position after source size adjustment. */
++	if (rs->src_rect.size.w < tr_size[i].w)
++	    rs->src_rect.coord.x = (tr_size[i].w - rs->src_rect.size.w)/2;
++	if (rs->src_rect.size.h < tr_size[i].h)
++	    rs->src_rect.coord.y = (tr_size[i].h - rs->src_rect.size.h)/2;
++
++	TRACE_((THIS_FILE, "src%d=%s/%dx%d->%dx%d@%d,%d dst=%dx%d@%d,%d",
++			   i, pjmedia_fourcc_name(tr_fmt_id[i], buf),
++			   tr_size[i].w, tr_size[i].h,
++			   rs->src_rect.size.w, rs->src_rect.size.h,
++			   rs->src_rect.coord.x, rs->src_rect.coord.y,
++			   rs->dst_rect.size.w, rs->dst_rect.size.h,
++			   rs->dst_rect.coord.x, rs->dst_rect.coord.y));
++
++	/* Create converter */
++	pjmedia_format_init_video(&cparam.src, rs->src_fmt_id,
++				  rs->src_rect.size.w,
++				  rs->src_rect.size.h,
++				  0, 1);
++	pjmedia_format_init_video(&cparam.dst, rs->dst_fmt_id,
++				  rs->dst_rect.size.w,
++				  rs->dst_rect.size.h,
++				  0, 1);
++	status = pjmedia_converter_create(NULL, pool, &cparam,
++					  &rs->converter);
++	if (status != PJ_SUCCESS) {
++	    PJ_PERROR(4,(THIS_FILE, status,
++			 "Port %d failed creating converter "
++			 "for source %d", cp->idx, i));
++	}
++    }
++}
++
++/* Render frame from source to sink buffer based on rendering settings. */
++static pj_status_t render_src_frame(vconf_port *src, vconf_port *sink,
++				    unsigned transmitter_idx)
++{
++    pj_status_t status;
++    render_state *rs = sink->render_states[transmitter_idx];
++
++    if (sink->transmitter_cnt == 1 && (!rs || !rs->converter)) {
++	/* The only transmitter and no conversion needed */
++	pj_assert(src->get_buf_size <= sink->put_buf_size);
++	pj_memcpy(sink->put_buf, src->get_buf, src->get_buf_size);
++    } else if (rs && rs->converter) {
++	pjmedia_frame src_frame, dst_frame;
++	
++	pj_bzero(&src_frame, sizeof(src_frame));
++	src_frame.buf = src->get_buf;
++	src_frame.size = src->get_buf_size;
++
++	pj_bzero(&dst_frame, sizeof(dst_frame));
++	dst_frame.buf = sink->put_buf;
++	dst_frame.size = sink->put_buf_size;
++
++	status = pjmedia_converter_convert2(rs->converter,
++					    &src_frame,
++					    &rs->src_frame_size,
++					    &rs->src_rect.coord,
++					    &dst_frame,
++					    &rs->dst_frame_size,
++					    &rs->dst_rect.coord,
++					    NULL);
++	if (status != PJ_SUCCESS) {
++	    PJ_PERROR(4,(THIS_FILE, status,
++			 "Port id %d: converter failed in "
++			 "rendering frame from port id %d",
++			 sink->idx, transmitter_idx));
++	    return status;
++	}
++    }
++
++    return PJ_SUCCESS;
++}
++
++
++#endif /* PJMEDIA_HAS_VIDEO */
+diff --git a/pjmedia/src/pjmedia/vid_port.c b/pjmedia/src/pjmedia/vid_port.c
+index 66d26f2..2bcab07 100644
+--- a/pjmedia/src/pjmedia/vid_port.c
++++ b/pjmedia/src/pjmedia/vid_port.c
+@@ -646,8 +646,10 @@ PJ_DEF(pj_status_t) pjmedia_vid_port_create( pj_pool_t *pool,
+ 	/* Always need to create media port for passive role */
+ 	vp->pasv_port = pp = PJ_POOL_ZALLOC_T(pool, vid_pasv_port);
+ 	pp->vp = vp;
+-	pp->base.get_frame = &vid_pasv_port_get_frame;
+-	pp->base.put_frame = &vid_pasv_port_put_frame;
++	if (prm->vidparam.dir & PJMEDIA_DIR_CAPTURE)
++	    pp->base.get_frame = &vid_pasv_port_get_frame;
++	if (prm->vidparam.dir & PJMEDIA_DIR_RENDER)
++	    pp->base.put_frame = &vid_pasv_port_put_frame;
+ 	pjmedia_port_info_init2(&pp->base.info, &vp->dev_name,
+ 	                        PJMEDIA_SIG_VID_PORT,
+ 			        prm->vidparam.dir, &prm->vidparam.fmt);
+@@ -730,6 +732,16 @@ pjmedia_vid_port_set_clock_src( pjmedia_vid_port *vid_port,
+ }
+ 
+ 
++PJ_DEF(pj_status_t) pjmedia_vid_port_subscribe_event(
++						pjmedia_vid_port *vp,
++						pjmedia_port *port)
++{
++    PJ_ASSERT_RETURN(vp && port, PJ_EINVAL);
++
++    /* Subscribe to port's events */
++    return pjmedia_event_subscribe(NULL, &client_port_event_cb, vp, port);
++}
++
+ PJ_DEF(pj_status_t) pjmedia_vid_port_connect(pjmedia_vid_port *vp,
+ 					      pjmedia_port *port,
+ 					      pj_bool_t destroy)
+@@ -1000,7 +1012,7 @@ static pj_status_t client_port_event_cb(pjmedia_event *event,
+             }
+         }
+         
+-        if (vp->stream_role == ROLE_PASSIVE) {
++        if (vp->role == ROLE_ACTIVE && vp->stream_role == ROLE_PASSIVE) {
+             pjmedia_clock_param clock_param;
+             
+             /**
+@@ -1016,6 +1028,12 @@ static pj_status_t client_port_event_cb(pjmedia_event *event,
+         
+ 	/* pjmedia_vid_port_start(vp); */
+ 	pjmedia_vid_dev_stream_start(vp->strm);
++
++	/* Update passive port info from the video stream */
++	if (vp->role == ROLE_PASSIVE) {
++	    pjmedia_format_copy(&vp->pasv_port->base.info.fmt,
++				&event->data.fmt_changed.new_fmt);
++	}
+     }
+     
+     /* Republish the event, post the event to the event manager
+diff --git a/pjmedia/src/pjmedia/vid_stream.c b/pjmedia/src/pjmedia/vid_stream.c
+index 511581a..19d51a6 100644
+--- a/pjmedia/src/pjmedia/vid_stream.c
++++ b/pjmedia/src/pjmedia/vid_stream.c
+@@ -928,6 +928,14 @@ static pj_status_t put_frame(pjmedia_port *port,
+     /* Get frame length in timestamp unit */
+     rtp_ts_len = stream->frame_ts_len;
+ 
++    /* Empty video frame? Just update RTP timestamp for now */
++    if (frame->type==PJMEDIA_FRAME_TYPE_VIDEO && frame->size==0) {
++	pjmedia_rtp_encode_rtp(&channel->rtp, channel->pt, 1, 0,
++			       rtp_ts_len,  (const void**)&rtphdr,
++			       &rtphdrlen);
++	return PJ_SUCCESS;
++    }
++
+     /* Init frame_out buffer. */
+     pj_bzero(&frame_out, sizeof(frame_out));
+     frame_out.buf = ((char*)channel->buf) + sizeof(pjmedia_rtp_hdr);
+diff --git a/pjsip-apps/src/pjsua/pjsua_app_cli.c b/pjsip-apps/src/pjsua/pjsua_app_cli.c
+index 93de055..34a0dcb 100644
+--- a/pjsip-apps/src/pjsua/pjsua_app_cli.c
++++ b/pjsip-apps/src/pjsua/pjsua_app_cli.c
+@@ -102,6 +102,7 @@
+ #define CMD_VIDEO_DEVICE	    ((CMD_VIDEO*10)+5)
+ #define CMD_VIDEO_CODEC		    ((CMD_VIDEO*10)+6)
+ #define CMD_VIDEO_WIN		    ((CMD_VIDEO*10)+7)
++#define CMD_VIDEO_CONF		    ((CMD_VIDEO*10)+8)
+ 
+ /* video level 3 command */
+ #define CMD_VIDEO_ACC_SHOW	    ((CMD_VIDEO_ACC*10)+1)
+@@ -129,6 +130,9 @@
+ #define CMD_VIDEO_WIN_HIDE	    ((CMD_VIDEO_WIN*10)+4)
+ #define CMD_VIDEO_WIN_MOVE	    ((CMD_VIDEO_WIN*10)+5)
+ #define CMD_VIDEO_WIN_RESIZE	    ((CMD_VIDEO_WIN*10)+6)
++#define CMD_VIDEO_CONF_LIST	    ((CMD_VIDEO_CONF*10)+1)
++#define CMD_VIDEO_CONF_CONNECT	    ((CMD_VIDEO_CONF*10)+2)
++#define CMD_VIDEO_CONF_DISCONNECT   ((CMD_VIDEO_CONF*10)+3)
+ 
+ /* dynamic choice argument list */
+ #define DYN_CHOICE_START	    9900
+@@ -2465,6 +2469,81 @@ static pj_status_t cmd_resize_vid_win(pj_cli_cmd_val *cval)
+     return pjsua_vid_win_set_size(wid, &size);
+ }
+ 
++static pj_status_t cmd_vid_conf_list()
++{
++    pjsua_conf_port_id id[100];
++    unsigned count = PJ_ARRAY_SIZE(id);
++    unsigned i;
++    pj_status_t status;
++
++    status = pjsua_vid_conf_enum_ports(id, &count);
++    if (status != PJ_SUCCESS) {
++	PJ_PERROR(1,(THIS_FILE, status,
++		     "Failed enumerating video conf bridge ports"));
++	return status;
++    }
++
++    PJ_LOG(3,(THIS_FILE," Video conference has %d ports:\n", count));
++    PJ_LOG(3,(THIS_FILE," id name                   format               rx           tx    \n"));
++    PJ_LOG(3,(THIS_FILE," ------------------------------------------------------------------\n"));
++    for (i=0; i<count; ++i) {
++	char li_list[PJSUA_MAX_CALLS*4];
++	char tr_list[PJSUA_MAX_CALLS*4];
++	char s[32];
++	unsigned j;
++	pjsua_vid_conf_port_info info;
++	pjmedia_rect_size *size;
++	pjmedia_ratio *fps;
++
++	pjsua_vid_conf_get_port_info(id[i], &info);
++	size = &info.format.det.vid.size;
++	fps = &info.format.det.vid.fps;
++
++	li_list[0] = '\0';
++	for (j=0; j<info.listener_cnt; ++j) {
++	    char s[10];
++	    pj_ansi_snprintf(s, sizeof(s), "%d%s",
++			     info.listeners[j],
++			     (j==info.listener_cnt-1)?"":",");
++	    pj_ansi_strcat(li_list, s);
++	}
++	tr_list[0] = '\0';
++	for (j=0; j<info.transmitter_cnt; ++j) {
++	    char s[10];
++	    pj_ansi_snprintf(s, sizeof(s), "%d%s", info.transmitters[j],
++			     (j==info.transmitter_cnt-1)?"":",");
++	    pj_ansi_strcat(tr_list, s);
++	}
++	pjmedia_fourcc_name(info.format.id, s);
++	s[4] = ' ';
++	pj_ansi_snprintf(s+5, sizeof(s)-5, "%dx%d@%.1f",
++			 size->w, size->h, (float)(fps->num*1.0/fps->denum));
++	PJ_LOG(3,(THIS_FILE,"%3d %.*s%.*s %s%.*s %s%.*s %s\n",
++			    id[i],
++			    (int)info.name.slen, info.name.ptr,
++			    22-(int)info.name.slen, "                   ",
++			    s,
++			    20-pj_ansi_strlen(s), "                    ",
++			    tr_list,
++			    12-pj_ansi_strlen(tr_list), "            ",
++			    li_list));
++    }
++    return PJ_SUCCESS;
++}
++
++static pj_status_t cmd_vid_conf_connect(pj_cli_cmd_val *cval, pj_bool_t connect)
++{
++    int P, Q;
++
++    P = (int)pj_strtol(&cval->argv[1]);
++    Q = (int)pj_strtol(&cval->argv[2]);
++    if (connect)
++	return pjsua_vid_conf_connect(P, Q, NULL);
++    else
++	return pjsua_vid_conf_disconnect(P, Q);
++}
++
++
+ /* Video handler */
+ static pj_status_t cmd_video_handler(pj_cli_cmd_val *cval)
+ {
+@@ -2545,6 +2624,13 @@ static pj_status_t cmd_video_handler(pj_cli_cmd_val *cval)
+     case CMD_VIDEO_WIN_RESIZE:
+ 	status = cmd_resize_vid_win(cval);
+ 	break;
++    case CMD_VIDEO_CONF_LIST:
++	status = cmd_vid_conf_list();
++	break;
++    case CMD_VIDEO_CONF_CONNECT:
++    case CMD_VIDEO_CONF_DISCONNECT:
++	status = cmd_vid_conf_connect(cval, (cmd_id==CMD_VIDEO_CONF_CONNECT));
++	break;
+     }
+ 
+     return status;
+@@ -3050,6 +3136,17 @@ static pj_status_t add_video_command(pj_cli_t *c)
+ 	"      <ARG name='height' type='int' desc='Height'/>"
+ 	"    </CMD>"
+ 	"  </CMD>"
++	"  <CMD name='conf' id='6008' desc='Video conference commands'>"
++	"    <CMD name='list' id='60081' desc='List all ports in video conference'/>"
++	"    <CMD name='cc' id='60082' desc='Connect ports in video conference'>"
++	"      <ARG name='source' type='int' desc='Source port ID'/>"
++	"      <ARG name='sink' type='int' desc='Sink port ID'/>"
++	"    </CMD>"
++	"    <CMD name='cd' id='60083' desc='Disconnect ports in video conference'>"
++	"      <ARG name='source' type='int' desc='Source port ID'/>"
++	"      <ARG name='sink' type='int' desc='Sink port ID'/>"
++	"    </CMD>"
++	"  </CMD>"
+ 	"</CMD>";
+ 
+     pj_str_t xml = pj_str(video_command);
+diff --git a/pjsip-apps/src/pjsua/pjsua_app_legacy.c b/pjsip-apps/src/pjsua/pjsua_app_legacy.c
+index 8ed9296..e10a438 100644
+--- a/pjsip-apps/src/pjsua/pjsua_app_legacy.c
++++ b/pjsip-apps/src/pjsua/pjsua_app_legacy.c
+@@ -296,6 +296,9 @@ static void vid_show_help()
+     puts("| vid win show|hide ID      Show/hide the specified video window ID           |");
+     puts("| vid win move ID X Y       Move window ID to position X,Y                    |");
+     puts("| vid win resize ID w h     Resize window ID to the specified width, height   |");
++    puts("| vid conf list             List all video ports in video conference bridge   |");
++    puts("| vid conf cc P Q           Connect port P to Q in the video conf bridge      |");
++    puts("| vid conf cd P Q           Disconnect port P to Q in the video conf bridge   |");
+     puts("+=============================================================================+");
+     printf("| Video will be %s in the next offer/answer %s                            |\n",
+ 	   (vid_enabled? "enabled" : "disabled"), (vid_enabled? " " : ""));
+@@ -591,6 +594,80 @@ static void vid_handle_menu(char *menuin)
+ 		PJ_PERROR(1,(THIS_FILE, status, "Set codec size error"));
+ 	} else
+ 	    goto on_error;
++    } else if (strcmp(argv[1], "conf")==0) {
++	pj_status_t status;
++
++	if (argc==3 && strcmp(argv[2], "list")==0) {
++	    pjsua_conf_port_id id[100];
++	    unsigned count = PJ_ARRAY_SIZE(id);
++
++	    status = pjsua_vid_conf_enum_ports(id, &count);
++	    if (status != PJ_SUCCESS) {
++		PJ_PERROR(1,(THIS_FILE, status,
++			     "Failed enumerating video conf bridge ports"));
++	    } else {
++		unsigned i;
++		printf(" Video conference has %d ports:\n", count);
++		printf(" id name                   format               rx           tx    \n");
++		printf(" ------------------------------------------------------------------\n");
++		for (i=0; i<count; ++i) {
++		    char li_list[PJSUA_MAX_CALLS*4];
++		    char tr_list[PJSUA_MAX_CALLS*4];
++		    char s[32];
++		    unsigned j;
++		    pjsua_vid_conf_port_info info;
++		    pjmedia_rect_size *size;
++		    pjmedia_ratio *fps;
++
++		    pjsua_vid_conf_get_port_info(id[i], &info);
++		    size = &info.format.det.vid.size;
++		    fps = &info.format.det.vid.fps;
++
++		    li_list[0] = '\0';
++		    for (j=0; j<info.listener_cnt; ++j) {
++			char s[10];
++			pj_ansi_snprintf(s, sizeof(s), "%d%s",
++					 info.listeners[j],
++					 (j==info.listener_cnt-1)?"":",");
++			pj_ansi_strcat(li_list, s);
++		    }
++		    tr_list[0] = '\0';
++		    for (j=0; j<info.transmitter_cnt; ++j) {
++			char s[10];
++			pj_ansi_snprintf(s, sizeof(s), "%d%s",
++					 info.transmitters[j],
++					 (j==info.transmitter_cnt-1)?"":",");
++			pj_ansi_strcat(tr_list, s);
++		    }
++		    pjmedia_fourcc_name(info.format.id, s);
++		    s[4] = ' ';
++		    pj_ansi_snprintf(s+5, sizeof(s)-5, "%dx%d@%.1f",
++				     size->w, size->h,
++				     (float)(fps->num*1.0/fps->denum));
++		    printf("%3d %.*s%.*s %s%.*s %s%.*s %s\n",
++			   id[i],
++			   (int)info.name.slen, info.name.ptr,
++			   22-(int)info.name.slen, "                   ",
++			   s,
++			   20-pj_ansi_strlen(s), "                    ",
++			   tr_list,
++			   12-pj_ansi_strlen(tr_list), "            ",
++			   li_list);
++		}
++	    }
++	} else if (argc==5 && strcmp(argv[2], "cc")==0) {
++	    int P, Q;
++	    P = atoi(argv[3]);
++	    Q = atoi(argv[4]);
++	    pjsua_vid_conf_connect(P, Q, NULL);
++	} else if (argc==5 && strcmp(argv[2], "cd")==0) {
++	    int P, Q;
++	    P = atoi(argv[3]);
++	    Q = atoi(argv[4]);
++	    pjsua_vid_conf_disconnect(P, Q);
++	} else {
++	    goto on_error;
++	}
+     } else
+ 	goto on_error;
+ 
+diff --git a/pjsip/include/pjsua-lib/pjsua.h b/pjsip/include/pjsua-lib/pjsua.h
+index 2b83a5c..5e7a940 100644
+--- a/pjsip/include/pjsua-lib/pjsua.h
++++ b/pjsip/include/pjsua-lib/pjsua.h
+@@ -4679,8 +4679,21 @@ typedef struct pjsua_call_media_info
+ 	     */
+ 	    pjsua_vid_win_id	    win_in;
+ 
+-	    /** The video capture device for outgoing transmission,
+-	     *  if any, or PJMEDIA_VID_INVALID_DEV
++	    /**
++	     * The video conference port number for the call in decoding
++	     * direction.
++	     */
++	    pjsua_conf_port_id	    dec_slot;
++
++	    /**
++	     * The video conference port number for the call in encoding
++	     * direction.
++	     */
++	    pjsua_conf_port_id	    enc_slot;
++
++	    /**
++	     * The video capture device for outgoing transmission,
++	     * if any, or PJMEDIA_VID_INVALID_DEV
+ 	     */
+ 	    pjmedia_vid_dev_index   cap_dev;
+ 
+@@ -5168,6 +5181,36 @@ PJ_DECL(pj_bool_t) pjsua_call_has_media(pjsua_call_id call_id);
+  */
+ PJ_DECL(pjsua_conf_port_id) pjsua_call_get_conf_port(pjsua_call_id call_id);
+ 
++
++/**
++ * Get the video window associated with the call. Note that this function
++ * will only evaluate the first video stream in the call, to query any other
++ * video stream, use pjsua_call_get_info().
++ *
++ * @param call_id	Call identification.
++ *
++ * @return		Video window, or PJSUA_INVALID_ID when the
++ *			media has not been established or is not active.
++ */
++PJ_DECL(pjsua_vid_win_id) pjsua_call_get_vid_win(pjsua_call_id call_id);
++
++
++/**
++ * Get the video conference port identification associated with the call.
++ * Note that this function will only evaluate the first video stream in
++ * the call, to query any other video stream, use pjsua_call_get_info().
++ *
++ * @param call_id	Call identification.
++ * @param dir		Port direction to be queried. Valid values are
++ *			PJMEDIA_DIR_ENCODING and PJMEDIA_DIR_DECODING only.
++ *
++ * @return		Conference port ID, or PJSUA_INVALID_ID when the
++ *			media has not been established or is not active.
++ */
++PJ_DECL(pjsua_conf_port_id) pjsua_call_get_vid_conf_port(
++						    pjsua_call_id call_id,
++						    pjmedia_dir dir);
++
+ /**
+  * Obtain detail information about the specified call.
+  *
+@@ -6703,7 +6746,7 @@ typedef struct pjsua_codec_info
+ 
+ 
+ /**
+- * This structure descibes information about a particular media port that
++ * This structure describes information about a particular media port that
+  * has been registered into the conference bridge. Application can query
+  * this info by calling #pjsua_conf_get_port_info().
+  */
+@@ -6740,7 +6783,7 @@ typedef struct pjsua_conf_port_info
+     unsigned		listener_cnt;
+ 
+     /** Array of listeners (in other words, ports where this port is 
+-     *  transmitting to.
++     *  transmitting to).
+      */
+     pjsua_conf_port_id	listeners[PJSUA_MAX_CONF_PORTS];
+ 
+@@ -7807,6 +7850,18 @@ PJ_DECL(pj_status_t) pjsua_vid_preview_start(pjmedia_vid_dev_index id,
+ PJ_DECL(pjsua_vid_win_id) pjsua_vid_preview_get_win(pjmedia_vid_dev_index id);
+ 
+ /**
++ * Get video conference slot ID of the specified capture device, if any.
++ *
++ * @param id		The capture device ID.
++ *
++ * @return		The video conference slot ID of the specified capture
++ *			device ID, or PJSUA_INVALID_ID if preview has not been
++ *			started for the device.
++ */
++PJ_DECL(pjsua_conf_port_id) pjsua_vid_preview_get_vid_conf_port(
++						    pjmedia_vid_dev_index id);
++
++/**
+  * Stop video preview.
+  *
+  * @param id		The capture device ID.
+@@ -7844,6 +7899,11 @@ typedef struct pjsua_vid_win_info
+     pjmedia_vid_dev_index rdr_dev;
+ 
+     /**
++     * Renderer port ID in the video conference bridge.
++     */
++    pjsua_conf_port_id slot_id;
++
++    /**
+      * Window show status. The window is hidden if false.
+      */
+     pj_bool_t	show;
+@@ -8017,6 +8077,147 @@ PJ_DECL(pj_status_t) pjsua_vid_codec_set_param(
+ 					const pjmedia_vid_codec_param *param);
+ 
+ 
++/*
++ * Video conference API
++ */
++
++/**
++ * This structure describes information about a particular video media port
++ * that has been registered into the video conference bridge. Application
++ * can query this info by calling #pjsua_vid_conf_get_port_info().
++ */
++typedef struct pjsua_vid_conf_port_info
++{
++    /** Conference port number. */
++    pjsua_conf_port_id	slot_id;
++
++    /** Port name. */
++    pj_str_t		name;
++
++    /** Format. */
++    pjmedia_format	format;
++
++    /** Number of listeners in the array. */
++    unsigned		listener_cnt;
++
++    /** Array of listeners (in other words, ports where this port is 
++     *  transmitting to).
++     */
++    pjsua_conf_port_id	listeners[PJSUA_MAX_CONF_PORTS];
++
++    /** Number of transmitters in the array. */
++    unsigned		transmitter_cnt;
++
++    /** Array of transmitters (in other words, ports where this port is 
++     *  receiving from).
++     */
++    pjsua_conf_port_id	transmitters[PJSUA_MAX_CONF_PORTS];
++
++} pjsua_vid_conf_port_info;
++
++
++/**
++ * Get current number of active ports in the bridge.
++ *
++ * @return		The number.
++ */
++PJ_DECL(unsigned) pjsua_vid_conf_get_active_ports(void);
++
++
++/**
++ * Enumerate all video conference ports.
++ *
++ * @param id		Array of conference port ID to be initialized.
++ * @param count		On input, specifies max elements in the array.
++ *			On return, it contains actual number of elements
++ *			that have been initialized.
++ *
++ * @return		PJ_SUCCESS on success, or the appropriate error code.
++ */
++PJ_DECL(pj_status_t) pjsua_vid_conf_enum_ports(pjsua_conf_port_id id[],
++					       unsigned *count);
++
++
++/**
++ * Get information about the specified video conference port
++ *
++ * @param port_id	Port identification.
++ * @param info		Pointer to store the port info.
++ *
++ * @return		PJ_SUCCESS on success, or the appropriate error code.
++ */
++PJ_DECL(pj_status_t) pjsua_vid_conf_get_port_info(
++					    pjsua_conf_port_id port_id,
++					    pjsua_vid_conf_port_info *info);
++
++
++/**
++ * Add arbitrary video media port to PJSUA's video conference bridge.
++ * Application can use this function to add the media port that it creates.
++ * For media ports that are created by PJSUA-LIB (such as calls, AVI player),
++ * PJSUA-LIB will automatically add the port to the bridge.
++ *
++ * @param pool		Pool to use.
++ * @param port		Media port to be added to the bridge.
++ * @param param		Currently this is not used and must be set to NULL.
++ * @param p_id		Optional pointer to receive the conference 
++ *			slot id.
++ *
++ * @return		PJ_SUCCESS on success, or the appropriate error code.
++ */
++PJ_DECL(pj_status_t) pjsua_vid_conf_add_port(pj_pool_t *pool,
++					     pjmedia_port *port,
++					     const void *param,
++					     pjsua_conf_port_id *p_id);
++
++
++/**
++ * Remove arbitrary slot from the video conference bridge. Application should
++ * only call this function if it registered the port manually with previous
++ * call to #pjsua_vid_conf_add_port().
++ *
++ * @param port_id	The slot id of the port to be removed.
++ *
++ * @return		PJ_SUCCESS on success, or the appropriate error code.
++ */
++PJ_DECL(pj_status_t) pjsua_vid_conf_remove_port(pjsua_conf_port_id port_id);
++
++
++/**
++ * Establish unidirectional video flow from souce to sink. One source
++ * may transmit to multiple destinations/sink. And if multiple
++ * sources are transmitting to the same sink, the video will be mixed
++ * together (currently, each source will be resized down so all sources will
++ * occupy the same portion in the sink video frame). Source and sink may
++ * refer to the same ID, effectively looping the media.
++ *
++ * If bidirectional media flow is desired, application needs to call
++ * this function twice, with the second one having the arguments
++ * reversed.
++ *
++ * @param source	Port ID of the source media/transmitter.
++ * @param sink		Port ID of the destination media/received.
++ * @param param		Currently this is not used and must be set to NULL.
++ *
++ * @return		PJ_SUCCESS on success, or the appropriate error code.
++ */
++PJ_DECL(pj_status_t) pjsua_vid_conf_connect(pjsua_conf_port_id source,
++					    pjsua_conf_port_id sink,
++					    const void *param);
++
++
++/**
++ * Disconnect video flow from the source to destination port.
++ *
++ * @param source	Port ID of the source media/transmitter.
++ * @param sink		Port ID of the destination media/received.
++ *
++ * @return		PJ_SUCCESS on success, or the appropriate error code.
++ */
++PJ_DECL(pj_status_t) pjsua_vid_conf_disconnect(pjsua_conf_port_id source,
++					       pjsua_conf_port_id sink);
++
++
+ 
+ /* end of VIDEO API */
+ /**
+diff --git a/pjsip/include/pjsua-lib/pjsua_internal.h b/pjsip/include/pjsua-lib/pjsua_internal.h
+index 998f25e..dc16740 100644
+--- a/pjsip/include/pjsua-lib/pjsua_internal.h
++++ b/pjsip/include/pjsua-lib/pjsua_internal.h
+@@ -59,6 +59,8 @@ struct pjsua_call_media
+ 	/** Video stream */
+ 	struct {
+ 	    pjmedia_vid_stream  *stream;    /**< The video stream.	    */
++	    pjsua_conf_port_id	 strm_enc_slot;	/**< Stream encode slot	    */
++	    pjsua_conf_port_id	 strm_dec_slot;	/**< Stream decode slot	    */
+ 	    pjsua_vid_win_id	 cap_win_id;/**< The video capture window   */
+ 	    pjsua_vid_win_id	 rdr_win_id;/**< The video render window    */
+ 	    pjmedia_vid_dev_index cap_dev;  /**< The video capture device   */
+@@ -403,7 +405,8 @@ typedef struct pjsua_vid_win
+     unsigned	 		 ref_cnt;	/**< Reference counter.	*/
+     pjmedia_vid_port		*vp_cap;	/**< Capture vidport.	*/
+     pjmedia_vid_port		*vp_rend;	/**< Renderer vidport	*/
+-    pjmedia_port		*tee;		/**< Video tee		*/
++    pjsua_conf_port_id		 cap_slot;	/**< Capturer conf slot */
++    pjsua_conf_port_id		 rend_slot;	/**< Renderer conf slot */
+     pjmedia_vid_dev_index	 preview_cap_id;/**< Capture dev id	*/
+     pj_bool_t			 preview_running;/**< Preview is started*/
+     pj_bool_t			 is_native; 	/**< Preview is by dev  */
+@@ -512,6 +515,7 @@ struct pjsua_data
+ 
+     /* For keeping video device settings */
+ #if PJSUA_HAS_VIDEO
++    pjmedia_vid_conf	 *vid_conf;
+     pj_uint32_t		  vid_caps[PJMEDIA_VID_DEV_MAX_DEVS];
+     pjmedia_vid_dev_param vid_param[PJMEDIA_VID_DEV_MAX_DEVS];
+ #endif
+diff --git a/pjsip/src/pjsua-lib/pjsua_call.c b/pjsip/src/pjsua-lib/pjsua_call.c
+index 7404106..2d3f560 100644
+--- a/pjsip/src/pjsua-lib/pjsua_call.c
++++ b/pjsip/src/pjsua-lib/pjsua_call.c
+@@ -152,6 +152,8 @@ static void reset_call(pjsua_call_id id)
+ 	call_med->strm.a.conf_slot = PJSUA_INVALID_ID;
+ 	call_med->strm.v.cap_win_id = PJSUA_INVALID_ID;
+ 	call_med->strm.v.rdr_win_id = PJSUA_INVALID_ID;
++	call_med->strm.v.strm_dec_slot = PJSUA_INVALID_ID;
++	call_med->strm.v.strm_enc_slot = PJSUA_INVALID_ID;
+ 	call_med->call = call;
+ 	call_med->idx = i;
+ 	call_med->tp_auto_del = PJ_TRUE;
+@@ -2224,6 +2226,11 @@ PJ_DEF(pj_status_t) pjsua_call_get_info( pjsua_call_id call_id,
+ 	    info->media[info->media_cnt].stream.vid.win_in =
+ 						call_med->strm.v.rdr_win_id;
+ 
++	    info->media[info->media_cnt].stream.vid.dec_slot =
++						call_med->strm.v.strm_dec_slot;
++	    info->media[info->media_cnt].stream.vid.enc_slot =
++						call_med->strm.v.strm_enc_slot;
++
+ 	    if (call_med->strm.v.cap_win_id != PJSUA_INVALID_ID) {
+ 		cap_dev = call_med->strm.v.cap_dev;
+ 	    }
+diff --git a/pjsip/src/pjsua-lib/pjsua_media.c b/pjsip/src/pjsua-lib/pjsua_media.c
+index c5fb998..bf7ac9b 100644
+--- a/pjsip/src/pjsua-lib/pjsua_media.c
++++ b/pjsip/src/pjsua-lib/pjsua_media.c
+@@ -1480,6 +1480,19 @@ pj_status_t call_media_on_event(pjmedia_event *event,
+ 	    }
+ 	    break;
+ 
++	case PJMEDIA_EVENT_FMT_CHANGED:
++	    if (call_med->strm.v.rdr_win_id != PJSUA_INVALID_ID) {
++		pjsua_vid_win *w = &pjsua_var.win[call_med->strm.v.rdr_win_id];
++		if (event->src == w->vp_rend) {
++		    /* Renderer just changed format, reconnect stream */
++		    pjsua_vid_conf_disconnect(call_med->strm.v.strm_dec_slot,
++					      w->rend_slot);
++		    pjsua_vid_conf_connect(call_med->strm.v.strm_dec_slot,
++					   w->rend_slot, NULL);
++		}
++	    }
++	    break;
++
+ 	default:
+ 	    break;
+     }
+diff --git a/pjsip/src/pjsua-lib/pjsua_vid.c b/pjsip/src/pjsua-lib/pjsua_vid.c
+index a5323d7..75799a6 100644
+--- a/pjsip/src/pjsua-lib/pjsua_vid.c
++++ b/pjsip/src/pjsua-lib/pjsua_vid.c
+@@ -26,7 +26,6 @@
+ #if PJSUA_HAS_VIDEO
+ 
+ #define ENABLE_EVENT	    	1
+-#define VID_TEE_MAX_PORT    	(PJSUA_MAX_CALLS + 1)
+ 
+ #define PJSUA_SHOW_WINDOW	1
+ #define PJSUA_HIDE_WINDOW	0
+@@ -68,6 +67,14 @@ pj_status_t pjsua_vid_subsys_init(void)
+ 	goto on_error;
+     }
+ 
++    status = pjmedia_vid_conf_create(pjsua_var.pool, NULL,
++				     &pjsua_var.vid_conf);
++    if (status != PJ_SUCCESS) {
++	PJ_PERROR(1,(THIS_FILE, status,
++		     "Error creating PJMEDIA video conference bridge"));
++	goto on_error;
++    }
++
+ #if PJMEDIA_HAS_VIDEO && PJMEDIA_HAS_VID_TOOLBOX_CODEC
+     status = pjmedia_codec_vid_toolbox_init(NULL, &pjsua_var.cp.factory);
+     if (status != PJ_SUCCESS) {
+@@ -140,6 +147,11 @@ pj_status_t pjsua_vid_subsys_destroy(void)
+ 	}
+     }
+ 
++    if (pjsua_var.vid_conf) {
++	pjmedia_vid_conf_destroy(pjsua_var.vid_conf);
++	pjsua_var.vid_conf = NULL;
++    }
++
+     pjmedia_vid_dev_subsys_shutdown();
+ 
+ #if PJMEDIA_HAS_FFMPEG_VID_CODEC
+@@ -514,6 +526,24 @@ PJ_DEF(pjsua_vid_win_id) pjsua_vid_preview_get_win(pjmedia_vid_dev_index id)
+     return vid_preview_get_win(id, PJ_TRUE);
+ }
+ 
++/*
++ * Get video conference slot ID of the specified capture device.
++ */
++PJ_DEF(pjsua_conf_port_id) pjsua_vid_preview_get_vid_conf_port(
++						    pjmedia_vid_dev_index id)
++{
++    pjsua_vid_win_id wid;
++    pjsua_vid_win *w;
++
++    wid = vid_preview_get_win(id, PJ_TRUE);
++    if (wid == PJSUA_INVALID_ID)
++	return PJSUA_INVALID_ID;
++
++    w = &pjsua_var.win[wid];
++    return w->cap_slot;
++}
++
++
+ PJ_DEF(void) pjsua_vid_win_reset(pjsua_vid_win_id wid)
+ {
+     pjsua_vid_win *w = &pjsua_var.win[wid];
+@@ -527,9 +557,9 @@ PJ_DEF(void) pjsua_vid_win_reset(pjsua_vid_win_id wid)
+ }
+ 
+ /* Allocate and initialize pjsua video window:
+- * - If the type is preview, video capture, tee, and render
+- *   will be instantiated.
+- * - If the type is stream, only renderer will be created.
++ * - If the type is preview: capture port and render port
++ *   will be instantiated, and connected via conf.
++ * - If the type is stream: only render port will be created.
+  */
+ static pj_status_t create_vid_win(pjsua_vid_win_type type,
+ 				  const pjmedia_format *fmt,
+@@ -672,7 +702,7 @@ static pj_status_t create_vid_win(pjsua_vid_win_type type,
+ 	w->preview_cap_id = cap_id;
+ 
+ 	/* Create capture video port */
+-	vp_param.active = PJ_TRUE;
++	vp_param.active = PJ_FALSE;
+ 	vp_param.vidparam.dir = PJMEDIA_DIR_CAPTURE;
+ 
+         /* Update the video setting with user preference */
+@@ -702,14 +732,11 @@ static pj_status_t create_vid_win(pjsua_vid_win_type type,
+ 	fmt_ = vp_param.vidparam.fmt;
+ 	fmt = &fmt_;
+ 
+-	/* Create video tee */
+-	status = pjmedia_vid_tee_create(w->pool, fmt, VID_TEE_MAX_PORT,
+-					&w->tee);
+-	if (status != PJ_SUCCESS)
+-	    goto on_error;
+-
+-	/* Connect capturer to the video tee */
+-	status = pjmedia_vid_port_connect(w->vp_cap, w->tee, PJ_FALSE);
++	/* Register capturer to the video conf */
++	status = pjsua_vid_conf_add_port(
++				w->pool,
++				pjmedia_vid_port_get_passive_port(w->vp_cap),
++				NULL, &w->cap_slot);
+ 	if (status != PJ_SUCCESS)
+ 	    goto on_error;
+ 
+@@ -738,7 +765,7 @@ static pj_status_t create_vid_win(pjsua_vid_win_type type,
+ 	if (status != PJ_SUCCESS)
+ 	    goto on_error;
+ 
+-	vp_param.active = (w->type == PJSUA_WND_TYPE_STREAM);
++	vp_param.active = PJ_FALSE;
+ 	vp_param.vidparam.dir = PJMEDIA_DIR_RENDER;
+ 	vp_param.vidparam.fmt = *fmt;
+ 	vp_param.vidparam.disp_size = fmt->det.vid.size;
+@@ -755,12 +782,17 @@ static pj_status_t create_vid_win(pjsua_vid_win_type type,
+ 	if (status != PJ_SUCCESS)
+ 	    goto on_error;
+ 
+-	/* For preview window, connect capturer & renderer (via tee) */
+-	if (w->type == PJSUA_WND_TYPE_PREVIEW) {
+-	    pjmedia_port *rend_port;
++	/* Register renderer to the video conf */
++	status = pjsua_vid_conf_add_port(
++				w->pool,
++				pjmedia_vid_port_get_passive_port(w->vp_rend),
++				NULL, &w->rend_slot);
++	if (status != PJ_SUCCESS)
++	    goto on_error;
+ 
+-	    rend_port = pjmedia_vid_port_get_passive_port(w->vp_rend);
+-	    status = pjmedia_vid_tee_add_dst_port2(w->tee, 0, rend_port);
++	/* For preview window, connect capturer & renderer (via conf) */
++	if (w->type == PJSUA_WND_TYPE_PREVIEW) {
++	    status = pjsua_vid_conf_connect(w->cap_slot, w->rend_slot, NULL);
+ 	    if (status != PJ_SUCCESS)
+ 		goto on_error;
+ 	}
+@@ -798,21 +830,19 @@ static void free_vid_win(pjsua_vid_win_id wid)
+     pj_log_push_indent();
+ 
+     if (w->vp_cap) {
++	pjsua_vid_conf_remove_port(w->cap_slot);
+         pjmedia_event_unsubscribe(NULL, &call_media_on_event, NULL,
+                                   w->vp_cap);
+ 	pjmedia_vid_port_stop(w->vp_cap);
+-	pjmedia_vid_port_disconnect(w->vp_cap);
+ 	pjmedia_vid_port_destroy(w->vp_cap);
+     }
+     if (w->vp_rend) {
++	pjsua_vid_conf_remove_port(w->rend_slot);
+         pjmedia_event_unsubscribe(NULL, &call_media_on_event, NULL,
+                                   w->vp_rend);
+ 	pjmedia_vid_port_stop(w->vp_rend);
+ 	pjmedia_vid_port_destroy(w->vp_rend);
+     }
+-    if (w->tee) {
+-	pjmedia_port_destroy(w->tee);
+-    }
+     pjsua_vid_win_reset(wid);
+ 
+     pj_log_pop_indent();
+@@ -849,6 +879,8 @@ pj_status_t pjsua_vid_channel_init(pjsua_call_media *call_med)
+ 
+     call_med->strm.v.rdr_dev = acc->cfg.vid_rend_dev;
+     call_med->strm.v.cap_dev = acc->cfg.vid_cap_dev;
++    call_med->strm.v.strm_dec_slot = PJSUA_INVALID_ID;
++    call_med->strm.v.strm_enc_slot = PJSUA_INVALID_ID;
+     if (call_med->strm.v.rdr_dev == PJMEDIA_VID_DEFAULT_RENDER_DEV) {
+ 	pjmedia_vid_dev_info info;
+ 	pjmedia_vid_dev_get_info(call_med->strm.v.rdr_dev, &info);
+@@ -978,6 +1010,7 @@ pj_status_t pjsua_vid_channel_update(pjsua_call_media *call_med,
+ 	    PJ_LOG(4,(THIS_FILE, "Setting up RX.."));
+ 	    pj_log_push_indent();
+ 
++	    /* Retrieve stream decoding port */
+ 	    status = pjmedia_vid_stream_get_port(call_med->strm.v.stream,
+ 						 PJMEDIA_DIR_DECODING,
+ 						 &media_port);
+@@ -1009,9 +1042,22 @@ pj_status_t pjsua_vid_channel_update(pjsua_call_media *call_med,
+                                     call_med, w->vp_rend);
+ #endif
+ 	    
+-	    /* Connect renderer to stream */
+-	    status = pjmedia_vid_port_connect(w->vp_rend, media_port,
+-					      PJ_FALSE);
++	    /* Register renderer to stream events */
++	    pjmedia_vid_port_subscribe_event(w->vp_rend, media_port);
++
++	    /* Register stream decoding to conf, using tmp_pool should be fine
++	     * as bridge will create its own pool (using tmp_pool factory).
++	     */
++	    status = pjsua_vid_conf_add_port(tmp_pool, media_port, NULL,
++					     &call_med->strm.v.strm_dec_slot);
++	    if (status != PJ_SUCCESS) {
++		pj_log_pop_indent();
++		goto on_error;
++	    }
++
++	    /* Connect stream to renderer (via conf) */
++	    status = pjsua_vid_conf_connect(call_med->strm.v.strm_dec_slot,
++					    w->rend_slot, NULL);
+ 	    if (status != PJ_SUCCESS) {
+ 		pj_log_pop_indent();
+ 		goto on_error;
+@@ -1041,6 +1087,7 @@ pj_status_t pjsua_vid_channel_update(pjsua_call_media *call_med,
+ 	    PJ_LOG(4,(THIS_FILE, "Setting up TX.."));
+ 	    pj_log_push_indent();
+ 
++	    /* Retrieve stream encoding port */
+ 	    status = pjmedia_vid_stream_get_port(call_med->strm.v.stream,
+ 						 PJMEDIA_DIR_ENCODING,
+ 						 &media_port);
+@@ -1078,8 +1125,20 @@ pj_status_t pjsua_vid_channel_update(pjsua_call_media *call_med,
+                                     call_med, w->vp_cap);
+ #endif
+ 	    
+-	    /* Connect stream to capturer (via video window tee) */
+-	    status = pjmedia_vid_tee_add_dst_port2(w->tee, 0, media_port);
++	    /* Register stream encoding to conf, using tmp_pool should be fine
++	     * as bridge will create its own pool (using tmp_pool factory).
++	     */
++	    status = pjsua_vid_conf_add_port(tmp_pool, media_port, NULL,
++					     &call_med->strm.v.strm_enc_slot);
++	    if (status != PJ_SUCCESS) {
++		pj_log_pop_indent();
++		goto on_error;
++	    }
++
++	    /* Connect capturer to stream encoding (via conf) */
++	    status = pjsua_vid_conf_connect(w->cap_slot,
++					    call_med->strm.v.strm_enc_slot,
++					    NULL);
+ 	    if (status != PJ_SUCCESS) {
+ 		pj_log_pop_indent();
+ 		goto on_error;
+@@ -1132,32 +1191,20 @@ void pjsua_vid_stop_stream(pjsua_call_media *call_med)
+     PJ_LOG(4,(THIS_FILE, "Stopping video stream.."));
+     pj_log_push_indent();
+     
++    /* Unregister video stream ports (encode+decode) from conference */
++    pjsua_vid_conf_remove_port(call_med->strm.v.strm_enc_slot);
++    pjsua_vid_conf_remove_port(call_med->strm.v.strm_dec_slot);
++
+     pjmedia_vid_stream_send_rtcp_bye(strm);
+ 
+     if (call_med->strm.v.cap_win_id != PJSUA_INVALID_ID) {
+-	pjmedia_port *media_port;
+ 	pjsua_vid_win *w = &pjsua_var.win[call_med->strm.v.cap_win_id];
+-	pj_status_t status;
+-
+-	/* Stop the capture before detaching stream and unsubscribing event */
+-	pjmedia_vid_port_stop(w->vp_cap);
+-
+-	/* Disconnect video stream from capture device */
+-	status = pjmedia_vid_stream_get_port(call_med->strm.v.stream,
+-					     PJMEDIA_DIR_ENCODING,
+-					     &media_port);
+-	if (status == PJ_SUCCESS) {
+-	    pjmedia_vid_tee_remove_dst_port(w->tee, media_port);
+-	}
+ 
+-        /* Unsubscribe event */
++	/* Unsubscribe event */
+ 	pjmedia_event_unsubscribe(NULL, &call_media_on_event, call_med,
+                                   w->vp_cap);
+ 
+-	/* Re-start capture again, if it is used by other stream */
+-	if (w->ref_cnt > 1)
+-	    pjmedia_vid_port_start(w->vp_cap);
+-
++	/* Decrement ref count of preview video window */
+ 	dec_vid_win(call_med->strm.v.cap_win_id);
+ 	call_med->strm.v.cap_win_id = PJSUA_INVALID_ID;
+     }
+@@ -1165,11 +1212,12 @@ void pjsua_vid_stop_stream(pjsua_call_media *call_med)
+     if (call_med->strm.v.rdr_win_id != PJSUA_INVALID_ID) {
+ 	pjsua_vid_win *w = &pjsua_var.win[call_med->strm.v.rdr_win_id];
+ 
+-	/* Stop the render before unsubscribing event */
++	/* Unsubscribe event, but stop the render first */
+ 	pjmedia_vid_port_stop(w->vp_rend);
+ 	pjmedia_event_unsubscribe(NULL, &call_media_on_event, call_med,
+                                   w->vp_rend);
+ 
++	/* Decrement ref count of stream video window */
+ 	dec_vid_win(call_med->strm.v.rdr_win_id);
+ 	call_med->strm.v.rdr_win_id = PJSUA_INVALID_ID;
+     }
+@@ -1431,6 +1479,7 @@ PJ_DEF(pj_status_t) pjsua_vid_win_get_info( pjsua_vid_win_id wid,
+     }
+ 
+     wi->rdr_dev = vparam.rend_id;
++    wi->slot_id = w->rend_slot;
+     wi->hwnd = vparam.window;
+     wi->show = !vparam.window_hide;
+     wi->pos  = vparam.window_pos;
+@@ -2042,10 +2091,13 @@ static pj_status_t call_change_cap_dev(pjsua_call *call,
+     if (status == PJ_SUCCESS) {
+ 	w->preview_cap_id = cap_dev;
+ 	call_med->strm.v.cap_dev = cap_dev;
++	/* Yay, change capturer done! */
+ 	return PJ_SUCCESS;
+     }
+ 
+-    /* No it doesn't support fast switching. Do slow switching then.. */
++    /* Oh no, it doesn't support fast switching. Do normal change then,
++     * i.e: remove the old and create a new capture.
++     */
+     status = pjmedia_vid_stream_get_port(call_med->strm.v.stream,
+ 					 PJMEDIA_DIR_ENCODING, &media_port);
+     if (status != PJ_SUCCESS)
+@@ -2054,22 +2106,12 @@ static pj_status_t call_change_cap_dev(pjsua_call *call,
+     pjmedia_event_unsubscribe(NULL, &call_media_on_event, call_med,
+                               w->vp_cap);
+     
+-    /* temporarily disconnect while we operate on the tee. */
+-    pjmedia_vid_port_disconnect(w->vp_cap);
+-
+-    /* = Detach stream port from the old capture device's tee = */
+-    status = pjmedia_vid_tee_remove_dst_port(w->tee, media_port);
+-    if (status != PJ_SUCCESS) {
+-	/* Something wrong, assume that media_port has been removed
+-	 * and continue.
+-	 */
+-	PJ_PERROR(4,(THIS_FILE, status,
+-		     "Warning: call %d: unable to remove video from tee",
+-		     call->index));
+-    }
++    /* Disconnect the old capture device to stream encoding port */
++    status = pjsua_vid_conf_disconnect(w->cap_slot,
++				       call_med->strm.v.strm_enc_slot);
++    if (status != PJ_SUCCESS)
++	return status;
+ 
+-    /* Reconnect again immediately. We're done with w->tee */
+-    pjmedia_vid_port_connect(w->vp_cap, w->tee, PJ_FALSE);
+ 
+     /* = Attach stream port to the new capture device = */
+ 
+@@ -2097,11 +2139,6 @@ static pj_status_t call_change_cap_dev(pjsua_call *call,
+ 
+     inc_vid_win(new_wid);
+     new_w = &pjsua_var.win[new_wid];
+-    
+-    /* Connect stream to capturer (via video window tee) */
+-    status = pjmedia_vid_tee_add_dst_port2(new_w->tee, 0, media_port);
+-    if (status != PJ_SUCCESS)
+-	goto on_error;
+ 
+     if (new_w->vp_rend) {
+ 	/* Start renderer */
+@@ -2122,6 +2159,13 @@ static pj_status_t call_change_cap_dev(pjsua_call *call,
+ 	    goto on_error;
+     }
+ 
++    /* Connect capturer to stream encoding port (via conf) */
++    status = pjsua_vid_conf_connect(new_w->cap_slot,
++				    call_med->strm.v.strm_enc_slot,
++				    NULL);
++    if (status != PJ_SUCCESS)
++	goto on_error;
++
+     /* Finally */
+     call_med->strm.v.cap_dev = cap_dev;
+     call_med->strm.v.cap_win_id = new_wid;
+@@ -2138,16 +2182,14 @@ on_error:
+ 	/* Unsubscribe, just in case */
+         pjmedia_event_unsubscribe(NULL, &call_media_on_event, call_med,
+                                   new_w->vp_cap);
+-	/* Disconnect media port from the new capturer */
+-	pjmedia_vid_tee_remove_dst_port(new_w->tee, media_port);
++
+ 	/* Release the new capturer */
+ 	dec_vid_win(new_wid);
+     }
+ 
+     /* Revert back to the old capturer */
+-    pjmedia_vid_port_disconnect(w->vp_cap);
+-    status = pjmedia_vid_tee_add_dst_port2(w->tee, 0, media_port);
+-    pjmedia_vid_port_connect(w->vp_cap, w->tee, PJ_FALSE);
++    status = pjsua_vid_conf_connect(w->cap_slot,
++				    call_med->strm.v.strm_enc_slot, NULL);
+     if (status != PJ_SUCCESS)
+ 	return status;
+ 
+@@ -2371,6 +2413,203 @@ PJ_DEF(pj_bool_t) pjsua_call_vid_stream_is_running( pjsua_call_id call_id,
+     return pjmedia_vid_stream_is_running(call_med->strm.v.stream, dir);
+ }
+ 
++
++/*****************************************************************************
++ * Video conference
++ */
++
++/*
++ * Get current number of active ports in the bridge.
++ */
++PJ_DEF(unsigned) pjsua_vid_conf_get_active_ports(void)
++{
++    return pjmedia_vid_conf_get_port_count(pjsua_var.vid_conf);
++}
++
++
++/*
++ * Enumerate all video conference ports.
++ */
++PJ_DEF(pj_status_t) pjsua_vid_conf_enum_ports( pjsua_conf_port_id id[],
++					       unsigned *count)
++{
++    return pjmedia_vid_conf_enum_ports(pjsua_var.vid_conf,
++				       (unsigned*)id, count);
++}
++
++
++/*
++ * Get information about the specified video conference port
++ */
++PJ_DEF(pj_status_t) pjsua_vid_conf_get_port_info(
++					    pjsua_conf_port_id port_id,
++					    pjsua_vid_conf_port_info *info)
++{
++    pjmedia_vid_conf_port_info cinfo;
++    unsigned i;
++    pj_status_t status;
++
++    status = pjmedia_vid_conf_get_port_info(pjsua_var.vid_conf,
++					    (unsigned)port_id, &cinfo);
++    if (status != PJ_SUCCESS)
++	return status;
++
++    pj_bzero(info, sizeof(*info));
++    info->slot_id = port_id;
++    info->name = cinfo.name;
++    pjmedia_format_copy(&info->format, &cinfo.format);
++
++    /* Build array of listeners */
++    info->listener_cnt = cinfo.listener_cnt;
++    for (i=0; i<cinfo.listener_cnt; ++i) {
++	info->listeners[i] = cinfo.listener_slots[i];
++    }
++
++    /* Build array of transmitters */
++    info->transmitter_cnt = cinfo.transmitter_cnt;
++    for (i=0; i<cinfo.transmitter_cnt; ++i) {
++	info->transmitters[i] = cinfo.transmitter_slots[i];
++    }
++
++    return PJ_SUCCESS;
++
++}
++
++
++/*
++ * Add arbitrary video media port to PJSUA's video conference bridge.
++ */
++PJ_DEF(pj_status_t) pjsua_vid_conf_add_port( pj_pool_t *pool,
++					     pjmedia_port *port,
++					     const void *param,
++					     pjsua_conf_port_id *p_id)
++{
++    pj_status_t status;
++
++    PJ_UNUSED_ARG(param);
++
++    status = pjmedia_vid_conf_add_port(pjsua_var.vid_conf, pool,
++				       port, NULL, NULL, (unsigned*)p_id);
++    if (status != PJ_SUCCESS) {
++	if (p_id)
++	    *p_id = PJSUA_INVALID_ID;
++    }
++
++    return status;
++}
++
++
++/*
++ * Remove arbitrary slot from the video conference bridge.
++ */
++PJ_DEF(pj_status_t) pjsua_vid_conf_remove_port(pjsua_conf_port_id id)
++{
++    return pjmedia_vid_conf_remove_port(pjsua_var.vid_conf, (unsigned)id);
++}
++
++
++/*
++ * Establish unidirectional video flow from souce to sink.
++ */
++PJ_DEF(pj_status_t) pjsua_vid_conf_connect( pjsua_conf_port_id source,
++					    pjsua_conf_port_id sink,
++					    const void *param)
++{
++    PJ_UNUSED_ARG(param);
++    return pjmedia_vid_conf_connect_port(pjsua_var.vid_conf, source, sink,
++					 NULL);
++}
++
++
++/*
++ * Disconnect video flow from the source to destination port.
++ */
++PJ_DEF(pj_status_t) pjsua_vid_conf_disconnect(pjsua_conf_port_id source,
++					      pjsua_conf_port_id sink)
++{
++    return pjmedia_vid_conf_disconnect_port(pjsua_var.vid_conf, source, sink);
++}
++
++/*
++ * Get the video window associated with the call.
++ */
++PJ_DEF(pjsua_vid_win_id) pjsua_call_get_vid_win(pjsua_call_id call_id)
++{
++    pjsua_call *call;
++    pjsua_vid_win_id wid = PJSUA_INVALID_ID;
++    unsigned i;
++
++    PJ_ASSERT_RETURN(call_id>=0 && call_id<(int)pjsua_var.ua_cfg.max_calls,
++		     PJ_EINVAL);
++
++    /* Use PJSUA_LOCK() instead of acquire_call():
++     *  https://trac.pjsip.org/repos/ticket/1371
++     */
++    PJSUA_LOCK();
++
++    if (!pjsua_call_is_active(call_id))
++	goto on_return;
++
++    call = &pjsua_var.calls[call_id];
++    for (i = 0; i < call->med_cnt; ++i) {
++	if (call->media[i].type == PJMEDIA_TYPE_VIDEO &&
++	    (call->media[i].dir & PJMEDIA_DIR_DECODING))
++	{
++	    wid = call->media[i].strm.v.rdr_win_id;
++	    break;
++	}
++    }
++
++on_return:
++    PJSUA_UNLOCK();
++
++    return wid;
++}
++
++
++/*
++ * Get the video conference port identification associated with the call.
++ */
++PJ_DEF(pjsua_conf_port_id) pjsua_call_get_vid_conf_port(
++						    pjsua_call_id call_id,
++						    pjmedia_dir dir)
++{
++    pjsua_call *call;
++    pjsua_conf_port_id port_id = PJSUA_INVALID_ID;
++    unsigned i;
++
++    PJ_ASSERT_RETURN(call_id>=0 && call_id<(int)pjsua_var.ua_cfg.max_calls,
++		     PJ_EINVAL);
++    PJ_ASSERT_RETURN(dir==PJMEDIA_DIR_ENCODING || dir==PJMEDIA_DIR_DECODING,
++		     PJ_EINVAL);
++
++    /* Use PJSUA_LOCK() instead of acquire_call():
++     *  https://trac.pjsip.org/repos/ticket/1371
++     */
++    PJSUA_LOCK();
++
++    if (!pjsua_call_is_active(call_id))
++	goto on_return;
++
++    call = &pjsua_var.calls[call_id];
++    for (i = 0; i < call->med_cnt; ++i) {
++	if (call->media[i].type == PJMEDIA_TYPE_VIDEO &&
++	    (call->media[i].dir & dir))
++	{
++	    port_id = (dir==PJMEDIA_DIR_ENCODING)?
++				    call->media[i].strm.v.strm_enc_slot :
++				    call->media[i].strm.v.strm_dec_slot;
++	    break;
++	}
++    }
++
++on_return:
++    PJSUA_UNLOCK();
++
++    return port_id;
++}
++
++
+ #endif /* PJSUA_HAS_VIDEO */
+ 
+ #endif /* PJSUA_MEDIA_HAS_PJMEDIA */

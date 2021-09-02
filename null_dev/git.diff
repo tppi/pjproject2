@@ -1,0 +1,10 @@
+git checkout 60a0c9bee0c561afabed1944ed3854d190bac6d2
+
+git diff HEAD~ HEAD > null_dev.patch
+
+git diff HEAD~ HEAD --name-only > null_dev.1
+
+git diff HEAD~ HEAD --name-only | xargs zip update.zip
+
+
+

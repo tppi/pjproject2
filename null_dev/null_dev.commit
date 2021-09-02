@@ -1,0 +1,51 @@
+commit 5a5522dc6eda7e42584050dccb2825c0b3ab18af
+Author: Riza Sulistyo <riza@teluu.com>
+Date:   Mon Sep 21 05:25:04 2015 +0000
+
+    Re #1881: Add filters file.
+    
+    
+    
+    git-svn-id: https://svn.pjsip.org/repos/pjproject/trunk@5181 74dad513-b988-da41-8d7b-12977e46ad98
+
+commit bcfe1aea767bdf6f2db6508efccb98981669806a
+Author: Riza Sulistyo <riza@teluu.com>
+Date:   Fri Aug 21 14:58:04 2015 +0000
+
+    Re #1881: Add Visual Studio 2015 support.
+    
+    
+    
+    git-svn-id: https://svn.pjsip.org/repos/pjproject/trunk@5168 74dad513-b988-da41-8d7b-12977e46ad98
+
+commit 1fef1f9b591ed05208d47f5b4ff7c2e61f503fe3
+Author: Perry Ismangil <perry@teluu.com>
+Date:   Tue Jun 14 14:35:39 2011 +0000
+
+    Fixed #1296 deleting VS6 workspaces and projects
+    
+    git-svn-id: https://svn.pjsip.org/repos/pjproject/branches/projects/2.0-dev@3583 74dad513-b988-da41-8d7b-12977e46ad98
+
+commit 04046c72315e8b00cffa4059a8519e9d593686f2
+Author: Benny Prijono <bennylp@teluu.com>
+Date:   Fri Feb 19 13:01:40 2010 +0000
+
+    More ticket #1038: added to VS6 and VS2005 projects
+    
+    
+    git-svn-id: https://svn.pjsip.org/repos/pjproject/trunk@3103 74dad513-b988-da41-8d7b-12977e46ad98
+
+commit 60a0c9bee0c561afabed1944ed3854d190bac6d2
+Author: Sauw Ming <ming@teluu.com>
+Date:   Fri Feb 19 09:57:48 2010 +0000
+
+    Implemented ticket #1038: null audio device
+    
+     * pjmedia-audiodev:
+       * implement null audio device
+     * build:
+       * added null audio support on MMP, and Makefile (TODO: vs6 and vs2005)
+    
+    
+    
+    git-svn-id: https://svn.pjsip.org/repos/pjproject/trunk@3102 74dad513-b988-da41-8d7b-12977e46ad98

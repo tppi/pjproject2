@@ -1,0 +1,32 @@
+commit 940e3c0443eaba160cc499193f5930f11434c595
+Author: Riza Sulistyo <trengginas@users.noreply.github.com>
+Date:   Fri Mar 5 21:59:07 2021 +0700
+
+    Support Android AMediaCodec (#2552)
+    
+    * Implement android AMediaCodec AVC/VPX codec.
+    
+    * - Change "anmed" to "and_media" prefix for clearity.
+    - Check if encoder/decoder exists before enabling codec.
+    
+    * Fix bug on enum info.
+    
+    * Add support to AMRNB and AMRWB audio codec.
+    
+    * Modification based on comments.
+    
+    * - move VPX packetizer from codec implementation.
+    
+    * - Remove unwanted changes.
+    - Fix bug on vpx (VP9) packetize method.
+    
+    * - New method to initialize vpx packetizer config.
+    - Don't use pt as codec id.
+    
+    * add compiler option to prioritze using software or hardware codec.
+    
+    * add documentation related to packetization mode for H264.
+    
+    * fix some potential compile error.
+    
+    * Specify video codec PT to support #2656.

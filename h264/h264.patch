@@ -1,0 +1,2959 @@
+diff --git a/pjmedia/build/Makefile b/pjmedia/build/Makefile
+index 24cc22d..8ba5e3c 100644
+--- a/pjmedia/build/Makefile
++++ b/pjmedia/build/Makefile
+@@ -66,7 +66,8 @@ export PJMEDIA_OBJS += $(OS_OBJS) $(M_OBJS) $(CC_OBJS) $(HOST_OBJS) \
+ 			sound_legacy.o sound_port.o stereo_port.o \
+ 			stream_common.o stream.o tonegen.o transport_adapter_sample.o \
+ 			transport_ice.o transport_loop.o \
+-			transport_srtp.o transport_udp.o vid_codec.o videoport.o vid_stream.o \
++			transport_srtp.o transport_udp.o vid_codec.o vid_codec_util.o \
++			videoport.o vid_stream.o \
+ 			wav_player.o wav_playlist.o wav_writer.o wave.o \
+ 			wsola.o
+ 
+@@ -109,6 +110,7 @@ export PJSDP_CFLAGS += $(_CFLAGS)
+ #
+ export PJMEDIA_CODEC_SRCDIR = ../src/pjmedia-codec
+ export PJMEDIA_CODEC_OBJS += ffmpeg_codecs.o \
++			h263_packetizer.o h264_packetizer.o \
+ 			$(OS_OBJS) $(M_OBJS) $(CC_OBJS) $(HOST_OBJS) \
+ 			ipp_codecs.o $(CODEC_OBJS)
+ export PJMEDIA_CODEC_CFLAGS += $(_CFLAGS) $(GSM_CFLAGS) $(SPEEX_CFLAGS) \
+diff --git a/pjmedia/build/pjmedia.vcproj b/pjmedia/build/pjmedia.vcproj
+index 72b0532..2055994 100644
+--- a/pjmedia/build/pjmedia.vcproj
++++ b/pjmedia/build/pjmedia.vcproj
+@@ -4692,6 +4692,10 @@
+ 				>
+ 			</File>
+ 			<File
++				RelativePath="..\src\pjmedia\vid_codec_util.c"
++				>
++			</File>
++			<File
+ 				RelativePath="..\src\pjmedia\vid_stream.c"
+ 				>
+ 			</File>
+@@ -5133,6 +5137,10 @@
+ 				>
+ 			</File>
+ 			<File
++				RelativePath="..\include\pjmedia\vid_codec_util.h"
++				>
++			</File>
++			<File
+ 				RelativePath="..\include\pjmedia\vid_stream.h"
+ 				>
+ 			</File>
+diff --git a/pjmedia/build/pjmedia_codec.vcproj b/pjmedia/build/pjmedia_codec.vcproj
+index caa2683..d16e73f 100644
+--- a/pjmedia/build/pjmedia_codec.vcproj
++++ b/pjmedia/build/pjmedia_codec.vcproj
+@@ -2835,6 +2835,14 @@
+ 				</FileConfiguration>
+ 			</File>
+ 			<File
++				RelativePath="..\src\pjmedia-codec\h263_packetizer.c"
++				>
++			</File>
++			<File
++				RelativePath="..\src\pjmedia-codec\h264_packetizer.c"
++				>
++			</File>
++			<File
+ 				RelativePath="..\src\pjmedia-codec\ilbc.c"
+ 				>
+ 				<FileConfiguration
+@@ -3070,6 +3078,10 @@
+ 				>
+ 			</File>
+ 			<File
++				RelativePath="..\include\pjmedia-codec\h264_packetizer.h"
++				>
++			</File>
++			<File
+ 				RelativePath="..\include\pjmedia-codec\ilbc.h"
+ 				>
+ 			</File>
+diff --git a/pjmedia/include/pjmedia-codec/h263_packetizer.h b/pjmedia/include/pjmedia-codec/h263_packetizer.h
+index 930115a..b80faf8 100644
+--- a/pjmedia/include/pjmedia-codec/h263_packetizer.h
++++ b/pjmedia/include/pjmedia-codec/h263_packetizer.h
+@@ -22,121 +22,122 @@
+ 
+ /**
+  * @file h263_packetizer.h
+- * @brief Packetizes H.263 bitstream into RTP payload.
++ * @brief Packetizes/unpacketizes H.263 bitstream into RTP payload.
+  */
+ 
+-#include <pj/errno.h>
++#include <pj/pool.h>
++#include <pj/types.h>
+ 
+ PJ_BEGIN_DECL
+ 
++
+ /**
+- * Find synchronization point (PSC, slice, GSBC, EOS, EOSBS) in H.263 
+- * bitstream, in reversed manner.
++ * Opaque declaration for H.263 packetizer.
+  */
+-PJ_INLINE(pj_uint8_t*) pjmedia_h263_find_sync_point_rev(pj_uint8_t *data,
+-                                                        pj_size_t data_len)
++typedef struct pjmedia_h263_packetizer pjmedia_h263_packetizer;
++
++
++/**
++ * Enumeration of H.263 packetization modes.
++ */
++typedef enum
+ {
+-    pj_uint8_t *p = data+data_len-1;
++    /**
++     * H.263 RTP packetization using RFC 4629.
++     */
++    PJMEDIA_H263_PACKETIZER_MODE_RFC4629,
+ 
+-    while (p > data && *p && *(p+1))
+-        --p;
++    /**
++     * H.263 RTP packetization using legacy RFC 2190.
++     * This is currently not supported.
++     */
++    PJMEDIA_H263_PACKETIZER_MODE_RFC2190,
++
++} pjmedia_h263_packetizer_mode;
+ 
+-    if (p == data)
+-        return (data + data_len);
+-        
+-    return p;
+-}
+ 
+ /**
+- * Generate an RTP payload from H.263 frame bitstream, in-place processing.
++ * H.263 packetizer configuration.
+  */
+-PJ_INLINE(pj_status_t) pjmedia_h263_packetize(pj_uint8_t *buf,
+-                                              pj_size_t buf_len,
+-                                              unsigned *pos,
+-                                              int max_payload_len,
+-                                              const pj_uint8_t **payload,
+-                                              pj_size_t *payload_len)
++typedef struct pjmedia_h263_packetizer_cfg
+ {
+-    pj_uint8_t *p, *p_end;
+-
+-    p = buf + *pos;
+-    p_end = buf + buf_len;
+-
+-    /* Put two octets payload header */
+-    if ((p_end-p > 2) && *p==0 && *(p+1)==0) {
+-        /* The bitstream starts with synchronization point, just override
+-         * the two zero octets (sync point mark) for payload header.
+-         */
+-        *p = 0x04;
+-    } else {
+-        /* Not started in synchronization point, we will use two octets
+-         * preceeding the bitstream for payload header!
+-         */
+-
+-	if (*pos < 2) {
+-	    /* Invalid H263 bitstream, it's not started with PSC */
+-	    return PJ_EINVAL;
+-	}
+-
+-	p -= 2;
+-        *p = 0;
+-    }
+-    *(p+1) = 0;
+-
+-    /* When bitstream truncation needed because of payload length/MTU 
+-     * limitation, try to use sync point for the payload boundary.
++    /**
++     * Maximum payload length.
++     * Default: PJMEDIA_MAX_MTU
++     */
++    int	mtu;
++
++    /**
++     * Packetization mode.
++     * Default: PJMEDIA_H263_PACKETIZER_MODE_RFC4629
+      */
+-    if (p_end-p > max_payload_len) {
+-        p_end = pjmedia_h263_find_sync_point_rev(p+2, max_payload_len-2);
+-    }
++    pjmedia_h263_packetizer_mode mode;
+ 
+-    *payload = p;
+-    *payload_len = p_end-p;
+-    *pos = p_end - buf;
++} pjmedia_h263_packetizer_cfg;
+ 
+-    return PJ_SUCCESS;
+-}
+ 
+ /**
+- * Append RTP payload to a H.263 picture bitstream.
++ * Create H.263 packetizer.
++ *
++ * @param pool		The memory pool.
++ * @param cfg		Packetizer settings, if NULL, default setting
++ *			will be used.
++ * @param p_pktz	Pointer to receive the packetizer.
++ *
++ * @return		PJ_SUCCESS on success.
+  */
+-PJ_INLINE(pj_status_t) pjmedia_h263_unpacketize(const pj_uint8_t *payload,
+-                                                pj_size_t   payload_len,
+-                                                pj_uint8_t *bits,
+-                                                pj_size_t  *bits_len)
+-{
+-    pj_uint8_t P, V, PLEN;
+-    const pj_uint8_t *p=payload;
+-    pj_size_t max_len = *bits_len;
+-
+-    P = *p & 0x04;
+-    V = *p & 0x02;
+-    PLEN = ((*p & 0x01) << 5) + ((*(p+1) & 0xF8)>>3);
+-
+-    /* Get bitstream pointer */
+-    p += 2;
+-    if (V)
+-        p += 1; /* Skip VRC data */
+-    if (PLEN)
+-        p += PLEN; /* Skip extra picture header data */
+-
+-    /* Get bitstream length */
+-    payload_len -= (p-payload);
+-
+-    *bits_len = payload_len + (P?2:0);
+-    PJ_ASSERT_RETURN(max_len >= *bits_len, PJ_ETOOSMALL);
+-
+-    /* Add two zero octets when payload flagged with sync point */
+-    if (P) {
+-        *bits++ = 0;
+-        *bits++ = 0;
+-    }
+-
+-    /* Add the bitstream */
+-    pj_memcpy(bits, p, payload_len);
+-
+-    return PJ_SUCCESS;
+-}
++PJ_DECL(pj_status_t) pjmedia_h263_packetizer_create(
++				    pj_pool_t *pool,
++				    const pjmedia_h263_packetizer_cfg *cfg,
++				    pjmedia_h263_packetizer **p_pktz);
++
++
++/**
++ * Generate an RTP payload from a H.263 picture bitstream. Note that this
++ * function will apply in-place processing, so the bitstream may be modified
++ * during the packetization.
++ *
++ * @param pktz		The packetizer.
++ * @param bits		The picture bitstream to be packetized.
++ * @param bits_len	The length of the bitstream.
++ * @param bits_pos	The bitstream offset to be packetized.
++ * @param payload	The output payload.
++ * @param payload_len	The output payload length.
++ *
++ * @return		PJ_SUCCESS on success.
++ */
++PJ_DECL(pj_status_t) pjmedia_h263_packetize(pjmedia_h263_packetizer *pktz,
++					    pj_uint8_t *bits,
++                                            pj_size_t bits_len,
++                                            unsigned *bits_pos,
++                                            const pj_uint8_t **payload,
++                                            pj_size_t *payload_len);
++
++
++/**
++ * Append an RTP payload to an H.263 picture bitstream. Note that in case of
++ * noticing packet lost, application should keep calling this function with
++ * payload pointer set to NULL, as the packetizer need to update its internal
++ * state.
++ *
++ * @param pktz		The packetizer.
++ * @param payload	The payload to be unpacketized.
++ * @param payload_len	The payload length.
++ * @param bits		The bitstream buffer.
++ * @param bits_size	The bitstream buffer size.
++ * @param bits_pos	The bitstream offset to put the unpacketized payload
++ *			in the bitstream, upon return, this will be updated
++ *			to the latest offset as a result of the unpacketized
++ *			payload.
++ *
++ * @return		PJ_SUCCESS on success.
++ */
++PJ_DECL(pj_status_t) pjmedia_h263_unpacketize(pjmedia_h263_packetizer *pktz,
++					      const pj_uint8_t *payload,
++                                              pj_size_t payload_len,
++                                              pj_uint8_t *bits,
++                                              pj_size_t bits_size,
++					      unsigned *bits_pos);
+ 
+ 
+ PJ_END_DECL
+diff --git a/pjmedia/include/pjmedia-codec/h264_packetizer.h b/pjmedia/include/pjmedia-codec/h264_packetizer.h
+new file mode 100644
+index 0000000..a676a04
+--- /dev/null
++++ b/pjmedia/include/pjmedia-codec/h264_packetizer.h
+@@ -0,0 +1,157 @@
++/* $Id$ */
++/* 
++ * Copyright (C) 2011 Teluu Inc. (http://www.teluu.com)
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA 
++ */
++#ifndef __PJMEDIA_H264_PACKETIZER_H__
++#define __PJMEDIA_H264_PACKETIZER_H__
++
++/**
++ * @file h264_packetizer.h
++ * @brief Packetizes H.264 bitstream into RTP payload and vice versa.
++ */
++
++#include <pj/types.h>
++
++PJ_BEGIN_DECL
++
++/**
++ * Opaque declaration for H.264 packetizer.
++ */
++typedef struct pjmedia_h264_packetizer pjmedia_h264_packetizer;
++
++
++/**
++ * Enumeration of H.264 packetization modes.
++ */
++typedef enum
++{
++    /**
++     * Single NAL unit packetization mode will only generate payloads
++     * containing a complete single NAL unit packet. As H.264 NAL unit
++     * size can be very large, this mode is usually not applicable for
++     * network environments with MTU size limitation.
++     */
++    PJMEDIA_H264_PACKETIZER_MODE_SINGLE_NAL,
++    
++    /**
++     * Non-interleaved packetization mode will generate payloads with the
++     * following possible formats:
++     * - single NAL unit packets,
++     * - NAL units aggregation STAP-A packets,
++     * - fragmented NAL unit FU-A packets.
++     */
++    PJMEDIA_H264_PACKETIZER_MODE_NON_INTERLEAVED,
++
++    /**
++     * Interleaved packetization mode will generate payloads with the
++     * following possible formats:
++     * - single NAL unit packets,
++     * - NAL units aggregation STAP-A & STAP-B packets,
++     * - fragmented NAL unit FU-A & FU-B packets.
++     * This packetization mode is currently unsupported.
++     */
++    PJMEDIA_H264_PACKETIZER_MODE_INTERLEAVED,
++} pjmedia_h264_packetizer_mode;
++
++
++/**
++ * H.264 packetizer setting.
++ */
++typedef struct pjmedia_h264_packetizer_cfg
++{
++    /**
++     * Maximum payload length.
++     * Default: PJMEDIA_MAX_MTU
++     */
++    int	mtu;
++
++    /**
++     * Packetization mode.
++     * Default: PJMEDIA_H264_PACKETIZER_MODE_NON_INTERLEAVED
++     */
++    pjmedia_h264_packetizer_mode mode;
++}
++pjmedia_h264_packetizer_cfg;
++
++
++/**
++ * Create H.264 packetizer.
++ *
++ * @param pool		The memory pool.
++ * @param cfg		Packetizer settings, if NULL, default setting
++ *			will be used.
++ * @param p_pktz	Pointer to receive the packetizer.
++ *
++ * @return		PJ_SUCCESS on success.
++ */
++PJ_DECL(pj_status_t) pjmedia_h264_packetizer_create(
++				    pj_pool_t *pool,
++				    const pjmedia_h264_packetizer_cfg *cfg,
++				    pjmedia_h264_packetizer **p_pktz);
++
++
++/**
++ * Generate an RTP payload from a H.264 picture bitstream. Note that this
++ * function will apply in-place processing, so the bitstream may be modified
++ * during the packetization.
++ *
++ * @param pktz		The packetizer.
++ * @param bits		The picture bitstream to be packetized.
++ * @param bits_len	The length of the bitstream.
++ * @param bits_pos	The bitstream offset to be packetized.
++ * @param payload	The output payload.
++ * @param payload_len	The output payload length.
++ *
++ * @return		PJ_SUCCESS on success.
++ */
++PJ_DECL(pj_status_t) pjmedia_h264_packetize(pjmedia_h264_packetizer *pktz,
++					    pj_uint8_t *bits,
++                                            pj_size_t bits_len,
++                                            unsigned *bits_pos,
++                                            const pj_uint8_t **payload,
++                                            pj_size_t *payload_len);
++
++
++/**
++ * Append an RTP payload to an H.264 picture bitstream. Note that in case of
++ * noticing packet lost, application should keep calling this function with
++ * payload pointer set to NULL, as the packetizer need to update its internal
++ * state.
++ *
++ * @param pktz		The packetizer.
++ * @param payload	The payload to be unpacketized.
++ * @param payload_len	The payload length.
++ * @param bits		The bitstream buffer.
++ * @param bits_size	The bitstream buffer size.
++ * @param bits_pos	The bitstream offset to put the unpacketized payload
++ *			in the bitstream, upon return, this will be updated
++ *			to the latest offset as a result of the unpacketized
++ *			payload.
++ *
++ * @return		PJ_SUCCESS on success.
++ */
++PJ_DECL(pj_status_t) pjmedia_h264_unpacketize(pjmedia_h264_packetizer *pktz,
++					      const pj_uint8_t *payload,
++                                              pj_size_t   payload_len,
++                                              pj_uint8_t *bits,
++                                              pj_size_t   bits_len,
++					      unsigned   *bits_pos);
++
++
++PJ_END_DECL
++
++#endif	/* __PJMEDIA_H264_PACKETIZER_H__ */
+diff --git a/pjmedia/include/pjmedia/format.h b/pjmedia/include/pjmedia/format.h
+index ae31f98..5fcf8f3 100644
+--- a/pjmedia/include/pjmedia/format.h
++++ b/pjmedia/include/pjmedia/format.h
+@@ -457,12 +457,12 @@ PJ_INLINE(unsigned) PJMEDIA_SPF2(unsigned clock_rate, const pjmedia_ratio *fr,
+ 				 unsigned channel_count)
+ {
+ #if PJ_HAS_INT64
+-    return ((unsigned)((pj_uint64_t)clock_rate * fr->num \
+-		       / fr->denum / channel_count));
++    return ((unsigned)((pj_uint64_t)clock_rate * fr->denum \
++		       / fr->num / channel_count));
+ #elif PJ_HAS_FLOATING_POINT
+-    return ((unsigned)(1.0 * clock_rate * fr->num /fr->denum /channel_count));
++    return ((unsigned)(1.0* clock_rate * fr->denum / fr->num /channel_count));
+ #else
+-    return ((unsigned)(1L * clock_rate * fr->num / fr->denum / channel_count));
++    return ((unsigned)(1L * clock_rate * fr->denum / fr->num / channel_count));
+ #endif
+ }
+ 
+diff --git a/pjmedia/include/pjmedia/vid_codec.h b/pjmedia/include/pjmedia/vid_codec.h
+index 55d6abb..f36727b 100644
+--- a/pjmedia/include/pjmedia/vid_codec.h
++++ b/pjmedia/include/pjmedia/vid_codec.h
+@@ -223,7 +223,9 @@ typedef struct pjmedia_vid_codec_op
+      * picture boundary detection by itself, e.g: for RTP delivery, payloads
+      * belong to the same picture will share the same RTP timestamp and also
+      * there is marker bit in the RTP header that is usually reserved for
+-     * end-of-picture flag.
++     * end-of-picture flag. Also note that in case of noticing packet lost,
++     * application should keep calling this function with payload pointer
++     * set to NULL, as the packetizer need to update its internal state.
+      *
+      * @param codec	The codec instance
+      * @param pkt	The input packet.
+@@ -241,7 +243,8 @@ typedef struct pjmedia_vid_codec_op
+                                const pj_uint8_t *payload,
+                                pj_size_t   payload_len,
+                                pj_uint8_t *bits,
+-                               pj_size_t  *bits_len);
++                               pj_size_t   bits_len,
++			       unsigned	  *bits_pos);
+ 
+     /** 
+      * Instruct the codec to encode the specified input frame. The input
+diff --git a/pjmedia/include/pjmedia/vid_codec_util.h b/pjmedia/include/pjmedia/vid_codec_util.h
+new file mode 100644
+index 0000000..64271d1
+--- /dev/null
++++ b/pjmedia/include/pjmedia/vid_codec_util.h
+@@ -0,0 +1,120 @@
++/* $Id$ */
++/* 
++ * Copyright (C) 2008-2009 Teluu Inc. (http://www.teluu.com)
++ * Copyright (C) 2003-2008 Benny Prijono <benny@prijono.org>
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA 
++ */
++#ifndef __PJMEDIA_VID_CODEC_UTIL_H__
++#define __PJMEDIA_VID_CODEC_UTIL_H__
++
++
++/**
++ * @file vid_codec_util.h
++ * @brief Video codec utilities.
++ */
++
++#include <pjmedia/vid_codec.h>
++
++
++PJ_BEGIN_DECL
++
++
++/**
++ * Definition of H.263 parameters.
++ */
++typedef struct pjmedia_vid_codec_h263_fmtp
++{
++    unsigned mpi_cnt;		    /**< # of parsed MPI param		    */
++    struct mpi {
++	pjmedia_rect_size   size;   /**< Picture size/resolution	    */
++	unsigned	    val;    /**< MPI value			    */
++    } mpi[8];			    /**< Minimum Picture Interval parameter */
++
++} pjmedia_vid_codec_h263_fmtp;
++
++
++/**
++ * Parse SDP fmtp of H.263.
++ *
++ * @param fmtp		The H.263 SDP fmtp to be parsed.
++ * @param h263_fmtp	The parsing result.
++ *
++ * @return		PJ_SUCCESS on success.
++ */
++PJ_DECL(pj_status_t) pjmedia_vid_codec_h263_parse_fmtp(
++				const pjmedia_codec_fmtp *fmtp,
++				pjmedia_vid_codec_h263_fmtp *h263_fmtp);
++
++
++/**
++ * Parse, negotiate, and apply the encoding and decoding SDP fmtp of H.263
++ * in the specified codec parameter.
++ *
++ * @param param		The codec parameter.
++ *
++ * @return		PJ_SUCCESS on success.
++ */
++PJ_DECL(pj_status_t) pjmedia_vid_codec_h263_apply_fmtp(
++				pjmedia_vid_codec_param *param);
++
++
++/**
++ * Definition of H.264 parameters.
++ */
++typedef struct pjmedia_vid_codec_h264_fmtp
++{
++    /* profile-level-id */
++    pj_uint8_t	    profile_idc;    /**< Profile ID			    */
++    pj_uint8_t	    profile_iop;    /**< Profile constraints bits	    */
++    pj_uint8_t	    level;	    /**< Level				    */
++
++    /* packetization-mode */
++    pj_uint8_t	    packetization_mode;	/**< Packetization mode		    */
++
++    /* max-mbps, max-fs, max-cpb, max-dpb, and max-br */
++    unsigned	    max_mbps;	    /**< Max macroblock processing rate	    */
++    unsigned	    max_fs;	    /**< Max frame size (in macroblocks)    */
++    unsigned	    max_cpb;	    /**< Max coded picture buffer size	    */
++    unsigned	    max_dpb;	    /**< Max decoded picture buffer size    */
++    unsigned	    max_br;	    /**< Max video bit rate		    */
++
++    /* sprop-parameter-sets, in NAL units */
++    pj_size_t	    sprop_param_sets_len;   /**< Parameter set length	    */
++    pj_uint8_t	    sprop_param_sets[256];  /**< Parameter set (SPS & PPS),
++						 in NAL unit bitstream	    */
++
++} pjmedia_vid_codec_h264_fmtp;
++
++
++/**
++ * Parse SDP fmtp of H.264.
++ *
++ * @param fmtp		The H.264 SDP fmtp to be parsed.
++ * @param h264_fmtp	The parsing result.
++ *
++ * @return		PJ_SUCCESS on success.
++ */
++PJ_DECL(pj_status_t) pjmedia_vid_codec_parse_h264_fmtp(
++				const pjmedia_codec_fmtp *fmtp,
++				pjmedia_vid_codec_h264_fmtp *h264_fmtp);
++
++
++
++
++PJ_END_DECL
++
++
++#endif	/* __PJMEDIA_VID_CODEC_UTIL_H__ */
+diff --git a/pjmedia/src/pjmedia-codec/ffmpeg_codecs.c b/pjmedia/src/pjmedia-codec/ffmpeg_codecs.c
+index e4562c7..3bb9b97 100644
+--- a/pjmedia/src/pjmedia-codec/ffmpeg_codecs.c
++++ b/pjmedia/src/pjmedia-codec/ffmpeg_codecs.c
+@@ -18,7 +18,9 @@
+  */
+ #include <pjmedia-codec/ffmpeg_codecs.h>
+ #include <pjmedia-codec/h263_packetizer.h>
++#include <pjmedia-codec/h264_packetizer.h>
+ #include <pjmedia/errno.h>
++#include <pjmedia/vid_codec_util.h>
+ #include <pj/assert.h>
+ #include <pj/list.h>
+ #include <pj/log.h>
+@@ -38,10 +40,6 @@
+ #include "../pjmedia/ffmpeg_util.h"
+ #include <libavcodec/avcodec.h>
+ #include <libavformat/avformat.h>
+-#include <libswscale/swscale.h>
+-
+-
+-#define PJMEDIA_FORMAT_FFMPEG_UNKNOWN  PJMEDIA_FORMAT_PACK('f','f','0','0');
+ 
+ 
+ /* Prototypes for FFMPEG codecs factory */
+@@ -79,7 +77,8 @@ static pj_status_t  ffmpeg_unpacketize(pjmedia_vid_codec *codec,
+                                        const pj_uint8_t *payload,
+                                        pj_size_t   payload_len,
+                                        pj_uint8_t *buf,
+-                                       pj_size_t  *buf_len);
++                                       pj_size_t   buf_len,
++				       unsigned	  *pos);
+ static pj_status_t  ffmpeg_codec_encode( pjmedia_vid_codec *codec, 
+ 				         const pjmedia_frame *input,
+ 				         unsigned output_buf_len, 
+@@ -130,33 +129,10 @@ static struct ffmpeg_factory {
+ 
+ typedef struct ffmpeg_codec_desc ffmpeg_codec_desc;
+ 
+-/* ITU resolution ID */
+-typedef enum itu_res_id {
+-    ITU_RES_SQCIF,
+-    ITU_RES_QCIF,
+-    ITU_RES_CIF,
+-    ITU_RES_4CIF,
+-    ITU_RES_16CIF,
+-    ITU_RES_CUSTOM,
+-} itu_res_id;
+-
+-/* ITU resolution definition */
+-struct itu_res {
+-    itu_res_id		id;
+-    pj_str_t		name;    
+-    pjmedia_rect_size	size;
+-} itu_res_def [] =
+-{
+-    {ITU_RES_16CIF,	{"16CIF",5},    {1408,1142}},
+-    {ITU_RES_4CIF,	{"4CIF",4},     {704,576}},
+-    {ITU_RES_CIF,	{"CIF",3},      {352,288}},
+-    {ITU_RES_QCIF,	{"QCIF",4},	{176,144}},
+-    {ITU_RES_SQCIF,	{"SQCIF",5},    {88,72}},
+-    {ITU_RES_CUSTOM,	{"CUSTOM",6},   {0,0}},
+-};
+ 
+ /* FFMPEG codecs private data. */
+-typedef struct ffmpeg_private {
++typedef struct ffmpeg_private
++{
+     const ffmpeg_codec_desc	    *desc;
+     pjmedia_vid_codec_param	     param;	/**< Codec param	    */
+     pj_pool_t			    *pool;	/**< Pool for each instance */
+@@ -179,27 +155,35 @@ typedef struct ffmpeg_private {
+      * may be needed for post-decoding.
+      */
+     enum PixelFormat		     expected_dec_fmt;
+-						/**< expected output format of 
++						/**< Expected output format of 
+ 						     ffmpeg decoder	    */
++
++    void			    *data;	/**< Codec specific data    */		    
+ } ffmpeg_private;
+ 
+ 
+-typedef pj_status_t (*func_packetize)	(pj_uint8_t *buf,
+-					 pj_size_t buf_len,
+-					 unsigned *pos,
+-					 int max_payload_len,
+-					 const pj_uint8_t **payload,
+-					 pj_size_t *payload_len);
++/* Shortcuts for packetize & unpacketize function declaration,
++ * as it has long params and is reused many times!
++ */
++#define FUNC_PACKETIZE(name) \
++    pj_status_t(name)(ffmpeg_private *ff, pj_uint8_t *bits, \
++		      pj_size_t bits_len, unsigned *bits_pos, \
++		      const pj_uint8_t **payload, pj_size_t *payload_len)
++
++#define FUNC_UNPACKETIZE(name) \
++    pj_status_t(name)(ffmpeg_private *ff, const pj_uint8_t *payload, \
++		      pj_size_t payload_len, pj_uint8_t *bits, \
++		      pj_size_t bits_len, unsigned *bits_pos)
+ 
+-typedef pj_status_t (*func_unpacketize)	(const pj_uint8_t *payload,
+-					 pj_size_t   payload_len,
+-					 pj_uint8_t *bits,
+-					 pj_size_t  *bits_len);
++typedef FUNC_PACKETIZE(*func_packetize);
++typedef FUNC_UNPACKETIZE(*func_unpacketize);
++typedef pj_status_t (*func_preopen)	(ffmpeg_private *ff);
++typedef pj_status_t (*func_postopen)	(ffmpeg_private *ff);
+ 
+-typedef pj_status_t (*func_parse_fmtp)	(ffmpeg_private *ff);
+ 
+ /* FFMPEG codec info */
+-struct ffmpeg_codec_desc {
++struct ffmpeg_codec_desc
++{
+     /* Predefined info */
+     pjmedia_vid_codec_info       info;
+     pjmedia_format_id		 base_fmt_id;
+@@ -207,7 +191,8 @@ struct ffmpeg_codec_desc {
+     pj_uint32_t			 max_bps;
+     func_packetize		 packetize;
+     func_unpacketize		 unpacketize;
+-    func_parse_fmtp		 parse_fmtp;
++    func_preopen		 preopen;
++    func_preopen		 postopen;
+     pjmedia_codec_fmtp		 dec_fmtp;
+ 
+     /* Init time defined info */
+@@ -216,47 +201,39 @@ struct ffmpeg_codec_desc {
+     AVCodec                     *dec;
+ };
+ 
+-/* H263 packetizer */
+-static pj_status_t h263_packetize(pj_uint8_t *buf,
+-				  pj_size_t buf_len,
+-				  unsigned *pos,
+-				  int max_payload_len,
+-				  const pj_uint8_t **payload,
+-				  pj_size_t *payload_len)
+-{
+-    return pjmedia_h263_packetize(buf, buf_len, pos, max_payload_len, 
+-				  payload, payload_len);
+-}
+-
+-/* H263 unpacketizer */
+-static pj_status_t h263_unpacketize(const pj_uint8_t *payload,
+-				    pj_size_t   payload_len,
+-				    pj_uint8_t *bits,
+-				    pj_size_t  *bits_len)
+-{
+-    return pjmedia_h263_unpacketize(payload, payload_len, bits, bits_len);
+-}
+ 
+-/* H263 fmtp parser */
+-static pj_status_t h263_parse_fmtp(ffmpeg_private *ff);
++/* Codec specific functions */
++static pj_status_t h264_preopen(ffmpeg_private *ff);
++static pj_status_t h264_postopen(ffmpeg_private *ff);
++static pj_status_t h263_preopen(ffmpeg_private *ff);
++static FUNC_PACKETIZE(h264_packetize);
++static FUNC_UNPACKETIZE(h264_unpacketize);
++static FUNC_PACKETIZE(h263_packetize);
++static FUNC_UNPACKETIZE(h263_unpacketize);
+ 
+ 
+ /* Internal codec info */
+ ffmpeg_codec_desc codec_desc[] =
+ {
+     {
++	{PJMEDIA_FORMAT_H264,	{"H264",4},	    PJMEDIA_RTP_PT_H264},
++	0,	500000,    1000000,
++	&h264_packetize, &h264_unpacketize, &h264_preopen, &h264_postopen,
++	/* Leading space for better compatibility (strange indeed!) */
++	{2, { {{" profile-level-id",17},    {"42e01e",6}}, 
++	      {{" packetization-mode",19},  {"1",1}}, } },
++    },
++    {
+ 	{PJMEDIA_FORMAT_H263P,	{"H263-1998",9},    PJMEDIA_RTP_PT_H263P},
+ 	PJMEDIA_FORMAT_H263,	1000000,    2000000,
+-	&h263_packetize, &h263_unpacketize, &h263_parse_fmtp,
+-	{2, { {{"CIF",3}, {"2",1}}, {{"QCIF",4}, {"1",1}}, } },
++	&h263_packetize, &h263_unpacketize, &h263_preopen, NULL,
++	{2, { {{"CIF",3},   {"1",1}}, 
++	      {{"QCIF",4},  {"1",1}}, } },
+     },
+     {
+ 	{PJMEDIA_FORMAT_H263,	{"H263",4},	    PJMEDIA_RTP_PT_H263},
+     },
+     {
+-	{PJMEDIA_FORMAT_H264,	{"H264",4},	    PJMEDIA_RTP_PT_H264},
+-    },
+-    {
+ 	{PJMEDIA_FORMAT_H261,	{"H261",4},	    PJMEDIA_RTP_PT_H261},
+     },
+     {
+@@ -271,194 +248,129 @@ ffmpeg_codec_desc codec_desc[] =
+     },
+ };
+ 
+-/* Parse fmtp value for custom resolution, e.g: "CUSTOM=800,600,2" */
+-static pj_status_t parse_fmtp_itu_custom_res(const pj_str_t *fmtp_val,
+-					     pjmedia_rect_size *size,
+-					     unsigned *mpi)
++
++typedef struct h264_data
+ {
+-    const char *p, *p_end;
+-    pj_str_t token;
+-    unsigned long val[3] = {0};
+-    unsigned i = 0;
+-
+-    p = token.ptr = fmtp_val->ptr;
+-    p_end = p + fmtp_val->slen;
+-
+-    while (p<=p_end && i<PJ_ARRAY_SIZE(val)) {
+-	if (*p==',' || p==p_end) {
+-	    token.slen = (char*)p - token.ptr;
+-	    val[i++] = pj_strtoul(&token);
+-	    token.ptr = (char*)p+1;
++    pjmedia_vid_codec_h264_fmtp	 fmtp;
++    pjmedia_h264_packetizer	*pktz;
++} h264_data;
++
++
++static pj_status_t h264_preopen(ffmpeg_private *ff)
++{
++    h264_data *data;
++    pjmedia_h264_packetizer_cfg pktz_cfg;
++    pj_status_t status;
++
++    data = PJ_POOL_ZALLOC_T(ff->pool, h264_data);
++    ff->data = data;
++
++    /* Create packetizer */
++    pktz_cfg.mtu = ff->param.enc_mtu;
++    pktz_cfg.mode = PJMEDIA_H264_PACKETIZER_MODE_NON_INTERLEAVED;
++    status = pjmedia_h264_packetizer_create(ff->pool, &pktz_cfg, &data->pktz);
++    if (status != PJ_SUCCESS)
++	return status;
++
++    if (ff->param.dir & PJMEDIA_DIR_ENCODING) {
++	AVCodecContext *ctx = ff->enc_ctx;
++
++	status = pjmedia_vid_codec_parse_h264_fmtp(&ff->param.enc_fmtp,
++						   &data->fmtp);
++	if (status != PJ_SUCCESS)
++	    return status;
++
++	ctx->profile  = data->fmtp.profile_idc;
++	if (data->fmtp.profile_iop) {
++#if defined(FF_PROFILE_H264_CONSTRAINED)
++	    ctx->profile |= FF_PROFILE_H264_CONSTRAINED;
++#endif
+ 	}
+-	++p;
+-    }
++	ctx->level    = data->fmtp.level;
++	PJ_TODO(set_h264_constrain_bits_properly_in_ffmpeg);
+ 
+-    if (!val[0] || !val[1])
+-	return PJ_ETOOSMALL;
++	/* Libx264 rejects the "broken" ffmpeg defaults, so just change some */
++	ctx->me_range = 16;
++	ctx->max_qdiff = 4;
++	ctx->qmin = 10;
++	ctx->qmax = 51;
++	ctx->qcompress = 0.6f;
+ 
+-    if (val[2]<1 || val[2]>32)
+-	return PJ_EINVAL;
++	ctx->flags |= CODEC_FLAG_LOW_DELAY;
++    }
+ 
+-    size->w = val[0];
+-    size->h = val[1];
+-    *mpi = val[2];
+     return PJ_SUCCESS;
+ }
+ 
+-#define CALC_ITU_CUSTOM_RES_SCORE(size, mpi) ((size)->w * (size)->h / mpi)
+-
+-/* ITU codec capabilities */
+-typedef struct itu_cap
++static pj_status_t h264_postopen(ffmpeg_private *ff)
+ {
+-    /* Lowest MPI for each non-custom resolution */
+-    unsigned		lowest_mpi[PJ_ARRAY_SIZE(itu_res_def)];
+-    /* For custom resolution, we use maximum processing score */
+-    unsigned		custom_res_max_score;
+-} itu_cap;
++    h264_data *data = (h264_data*)ff->data;
++    PJ_UNUSED_ARG(data);
+ 
++    // Where to apply the "sprop-parameter-sets" fmtp from remote SDP?
++    // Through decoder decode() or decoder context extradata?
++    PJ_TODO(apply_h264_fmtp_sprop_parameter_sets_from_remote_sdp);
+ 
+-static pj_status_t load_itu_cap(const pjmedia_codec_fmtp *fmtp,
+-				itu_cap *cap)
+-{
+-    unsigned i, j;
+-    unsigned min_mpi = 0;
++    return PJ_SUCCESS;
++}
+ 
+-    /* Get Minimum Picture Interval (MPI) for each resolution. If a resolution
+-     * has no MPI setting in fmtp, the MPI setting is derived from the higher
+-     * resolution.
+-     */
+-    for (i=0; i<PJ_ARRAY_SIZE(itu_res_def); ++i) {
+-
+-	/* Init lowest MPI */
+-	cap->lowest_mpi[i] = min_mpi? min_mpi:1;
+-
+-	for (j=0; j<fmtp->cnt; ++j) {
+-	    if (pj_stricmp(&fmtp->param[j].name, &itu_res_def[i].name)==0) {
+-		pjmedia_rect_size size;
+-		unsigned mpi;
+-		unsigned score;
+-
+-		if (i != ITU_RES_CUSTOM) {
+-		    size = itu_res_def[i].size;
+-		    mpi = pj_strtoul(&fmtp->param[j].val);
+-		    if (min_mpi)
+-			min_mpi = PJ_MIN(mpi, min_mpi);
+-		    else
+-			min_mpi = mpi;
+-
+-		    /* Update the lowest MPI for this resolution */
+-		    cap->lowest_mpi[i] = min_mpi;
+-
+-		    /* Also update the processing score for the custom 
+-		     * resolution.
+-		     */
+-		    score = CALC_ITU_CUSTOM_RES_SCORE(&size, mpi);
+-		    cap->custom_res_max_score = 
+-				    PJ_MAX(score, cap->custom_res_max_score);
+-		} else {
+-		    
+-
+-		    if (parse_fmtp_itu_custom_res(&fmtp->param[j].val, 
+-						  &size, &mpi) == PJ_SUCCESS)
+-		    {
+-			score = CALC_ITU_CUSTOM_RES_SCORE(&size, mpi);
+-			cap->custom_res_max_score = 
+-				    PJ_MAX(score, cap->custom_res_max_score);
+-		    }
+-		}
+-	    }
+-	}
+-    }
+ 
+-    return PJ_SUCCESS;
++static FUNC_PACKETIZE(h264_packetize)
++{
++    h264_data *data = (h264_data*)ff->data;
++    return pjmedia_h264_packetize(data->pktz, bits, bits_len, bits_pos,
++				  payload, payload_len);
+ }
+ 
+-/* H263 fmtp parser */
+-static pj_status_t h263_parse_fmtp(ffmpeg_private *ff)
++static FUNC_UNPACKETIZE(h264_unpacketize)
+ {
+-    pjmedia_dir dir;
+-    pj_status_t status;
++    h264_data *data = (h264_data*)ff->data;
++    return pjmedia_h264_unpacketize(data->pktz, payload, payload_len,
++				    bits, bits_len, bits_pos);
++}
+ 
+-    dir = ff->param.dir;
+ 
+-    if (ff->param.dir & PJMEDIA_DIR_ENCODING) {
+-	pjmedia_vid_codec_param param_ref;
+-	pjmedia_codec_fmtp *fmtp_rem, *fmtp_ref;
+-	itu_cap local_cap;
+-	pjmedia_rect_size size = {0};
+-	unsigned mpi = 0;
+-	pj_bool_t got_good_res = PJ_FALSE;
+-	pj_bool_t has_prefered_res = PJ_FALSE;
+-	unsigned i, j;
+-
+-	fmtp_rem = &ff->param.enc_fmtp;
+-	dir &= ~PJMEDIA_DIR_ENCODING;
+-
+-	/* Get default fmtp setting as the reference for local capabilities */
+-	status = pjmedia_vid_codec_mgr_get_default_param(
+-			ffmpeg_factory.mgr, &ff->desc->info, &param_ref);
+-	fmtp_ref = (status==PJ_SUCCESS)? &param_ref.enc_fmtp : fmtp_rem;
+-
+-	/* Load default local capabilities */
+-	status = load_itu_cap(fmtp_ref, &local_cap);
+-	pj_assert(status == PJ_SUCCESS);
+-
+-	/* Negotiate resolution and MPI */
+-	for (i=0; i<fmtp_rem->cnt && !got_good_res; ++i)
+-	{
+-	    for (j=0; j<PJ_ARRAY_SIZE(itu_res_def) && !got_good_res; ++j)
+-	    {
+-		if (pj_stricmp(&fmtp_rem->param[i].name, &itu_res_def[j].name))
+-		    continue;
++typedef struct h263_data
++{
++    pjmedia_h263_packetizer	*pktz;
++} h263_data;
+ 
+-		has_prefered_res = PJ_TRUE;
+-		if (j == ITU_RES_CUSTOM) {
+-		    unsigned score;
+-
+-		    if (parse_fmtp_itu_custom_res(&fmtp_rem->param[i].val, 
+-						  &size, &mpi) != PJ_SUCCESS)
+-		    {
+-			/* Invalid custom resolution format, skip this 
+-			 * custom resolution
+-			 */
+-			break;
+-		    }
+-
+-		    score = CALC_ITU_CUSTOM_RES_SCORE(&size, mpi);
+-		    if (score <= local_cap.custom_res_max_score)
+-			got_good_res = PJ_TRUE;
+-		} else {
+-		    mpi = pj_strtoul(&fmtp_rem->param[i].val);
+-		    if (mpi>=1 && mpi<=32 && mpi>=local_cap.lowest_mpi[j]) {
+-			got_good_res = PJ_TRUE;
+-			size = itu_res_def[j].size;
+-		    }
+-		}
+-	    }
+-	}
++/* H263 pre-open */
++static pj_status_t h263_preopen(ffmpeg_private *ff)
++{
++    h263_data *data;
++    pjmedia_h263_packetizer_cfg pktz_cfg;
++    pj_status_t status;
+ 
+-	if (has_prefered_res) {
+-	    if (got_good_res) {
+-		pjmedia_video_format_detail *vfd;
++    data = PJ_POOL_ZALLOC_T(ff->pool, h263_data);
++    ff->data = data;
+ 
+-		/* Apply this size & MPI */
+-		vfd = pjmedia_format_get_video_format_detail(&ff->param.enc_fmt,
+-							     PJ_TRUE);
+-		vfd->size = size;
+-		vfd->fps.num = 30000;
+-		vfd->fps.denum = 1001 * mpi;
+-		got_good_res = PJ_TRUE;
++    /* Create packetizer */
++    pktz_cfg.mtu = ff->param.enc_mtu;
++    pktz_cfg.mode = PJMEDIA_H263_PACKETIZER_MODE_RFC4629;
++    status = pjmedia_h263_packetizer_create(ff->pool, &pktz_cfg, &data->pktz);
++    if (status != PJ_SUCCESS)
++	return status;
+ 
+-		PJ_TODO(NOTIFY_APP_ABOUT_THIS_NEW_ENCODING_FORMAT);
+-	    } else {
+-		return PJMEDIA_EBADFMT;
+-	    }
+-	}
+-    }
++    /* Apply fmtp settings to codec param */
++    status = pjmedia_vid_codec_h263_apply_fmtp(&ff->param);
+ 
+-    return PJ_SUCCESS;
++    return status;
+ }
+ 
++static FUNC_PACKETIZE(h263_packetize)
++{
++    h263_data *data = (h263_data*)ff->data;
++    return pjmedia_h263_packetize(data->pktz, bits, bits_len, bits_pos,
++				  payload, payload_len);
++}
++
++static FUNC_UNPACKETIZE(h263_unpacketize)
++{
++    h263_data *data = (h263_data*)ff->data;
++    return pjmedia_h263_unpacketize(data->pktz, payload, payload_len,
++				    bits, bits_len, bits_pos);
++}
+ 
+ 
+ static const ffmpeg_codec_desc* find_codec_desc_by_info(
+@@ -809,6 +721,9 @@ static pj_status_t ffmpeg_default_attr( pjmedia_vid_codec_factory *factory,
+     attr->enc_fmt.det.vid.avg_bps = desc->avg_bps;
+     attr->enc_fmt.det.vid.max_bps = desc->max_bps;
+ 
++    /* MTU */
++    attr->enc_mtu = PJMEDIA_MAX_MTU;
++
+     return PJ_SUCCESS;
+ }
+ 
+@@ -933,7 +848,7 @@ static void print_ffmpeg_err(int err)
+ }
+ 
+ static enum PixelFormat dec_get_format(struct AVCodecContext *s, 
+-                                          const enum PixelFormat * fmt)
++                                       const enum PixelFormat * fmt)
+ {
+     ffmpeg_private *ff = (ffmpeg_private*)s->opaque;
+     enum PixelFormat def_fmt = *fmt;
+@@ -953,103 +868,119 @@ static pj_status_t open_ffmpeg_codec(ffmpeg_private *ff,
+                                      pj_mutex_t *ff_mutex)
+ {
+     enum PixelFormat pix_fmt;
+-    pj_status_t status;
+     pjmedia_video_format_detail *vfd;
++    pj_bool_t enc_opened = PJ_FALSE, dec_opened = PJ_FALSE;
++    pj_status_t status;
+ 
++    /* Get decoded pixel format */
+     status = pjmedia_format_id_to_PixelFormat(ff->param.dec_fmt.id,
+                                               &pix_fmt);
+     if (status != PJ_SUCCESS)
+         return status;
++    ff->expected_dec_fmt = pix_fmt;
+ 
++    /* Get video format detail for shortcut access to encoded format */
+     vfd = pjmedia_format_get_video_format_detail(&ff->param.enc_fmt, 
+ 						 PJ_TRUE);
+-    ff->expected_dec_fmt = pix_fmt;
+ 
+-    while (((ff->param.dir & PJMEDIA_DIR_ENCODING) && ff->enc_ctx == NULL) ||
+-           ((ff->param.dir & PJMEDIA_DIR_DECODING) && ff->dec_ctx == NULL))
+-    {
+-        pjmedia_dir dir;
+-        AVCodecContext *ctx = NULL;
+-        AVCodec *codec = NULL;
+-        int err;
++    /* Allocate ffmpeg codec context */
++    if (ff->param.dir & PJMEDIA_DIR_ENCODING) {
++	ff->enc_ctx = avcodec_alloc_context();
++	if (ff->enc_ctx == NULL)
++	    goto on_error;
++    }
++    if (ff->param.dir & PJMEDIA_DIR_DECODING) {
++	ff->dec_ctx = avcodec_alloc_context();
++	if (ff->dec_ctx == NULL)
++	    goto on_error;
++    }
+ 
+-        /* Set which direction to open */
+-        if (ff->param.dir==PJMEDIA_DIR_ENCODING_DECODING && ff->enc!=ff->dec) {
+-            dir = ff->enc_ctx? PJMEDIA_DIR_DECODING : PJMEDIA_DIR_ENCODING;
+-        } else {
+-            dir = ff->param.dir;
+-        }
++    /* Let the codec apply specific settings before the codec opened */
++    if (ff->desc->preopen) {
++	status = (*ff->desc->preopen)(ff);
++	if (status != PJ_SUCCESS)
++	    goto on_error;
++    }
+ 
+-	/* Init ffmpeg codec context */
+-        ctx = avcodec_alloc_context();
++    if (ff->param.dir & PJMEDIA_DIR_ENCODING) {
++        AVCodecContext *ctx = ff->enc_ctx;
++        int err;
+ 
+-        /* Common attributes */
++	/* Init common settings */
+         ctx->pix_fmt = pix_fmt;
++	ctx->width = vfd->size.w;
++	ctx->height = vfd->size.h;
++	ctx->time_base.num = vfd->fps.denum;
++	ctx->time_base.den = vfd->fps.num;
++	if (vfd->avg_bps) {
++	    ctx->bit_rate = vfd->avg_bps;
++	    if (vfd->max_bps > vfd->avg_bps)
++		ctx->bit_rate_tolerance = vfd->max_bps - vfd->avg_bps;
++	}
++	ctx->strict_std_compliance = FF_COMPLIANCE_STRICT;
+         ctx->workaround_bugs = FF_BUG_AUTODETECT;
+         ctx->opaque = ff;
+ 
+-        if (dir & PJMEDIA_DIR_ENCODING) {
+-            codec = ff->enc;
+-
+-            /* Encoding only attributes */
+-	    ctx->width = vfd->size.w;
+-	    ctx->height = vfd->size.h;
+-            ctx->time_base.num = vfd->fps.denum;
+-            ctx->time_base.den = vfd->fps.num;
+-	    if (vfd->avg_bps) {
+-                ctx->bit_rate = vfd->avg_bps;
+-		if (vfd->max_bps > vfd->avg_bps)
+-		    ctx->bit_rate_tolerance = vfd->max_bps - vfd->avg_bps;
+-	    }
+-
+-	    /* Libx264 experimental setting (it rejects ffmpeg defaults) */
+-	    if (ff->param.enc_fmt.id == PJMEDIA_FORMAT_H264) {
+-		ctx->me_range = 16;
+-		ctx->max_qdiff = 4;
+-		ctx->qmin = 10;
+-		ctx->qmax = 51;
+-		ctx->qcompress = 0.6f;
+-	    }
+-
+-	    /* For encoder, should be better to be strict to the standards */
+-            ctx->strict_std_compliance = FF_COMPLIANCE_STRICT;
++	/* Open ffmpeg codec */
++        pj_mutex_lock(ff_mutex);
++        err = avcodec_open(ctx, ff->enc);
++        pj_mutex_unlock(ff_mutex);
++        if (err < 0) {
++            print_ffmpeg_err(err);
++            status = PJMEDIA_CODEC_EFAILED;
++	    goto on_error;
+         }
++	enc_opened = PJ_TRUE;
++    }
+ 
+-        if (dir & PJMEDIA_DIR_DECODING) {
+-            codec = ff->dec;
+-
+-            /* Decoding only attributes */
+-
+-	    /* Width/height may be overriden by ffmpeg after first decoding. */
+-            ctx->width = ctx->coded_width = ff->param.dec_fmt.det.vid.size.w;
+-            ctx->height = ctx->coded_height = ff->param.dec_fmt.det.vid.size.h;
++    if (ff->param.dir & PJMEDIA_DIR_DECODING) {
++	AVCodecContext *ctx = ff->dec_ctx;
++	int err;
+ 
+-            /* For decoder, be more flexible */
+-            if (ff->param.dir!=PJMEDIA_DIR_ENCODING_DECODING || 
+-		ff->enc!=ff->dec)
+-	    {
+-                ctx->strict_std_compliance = FF_COMPLIANCE_EXPERIMENTAL;
+-	    }
+-
+-            ctx->get_format = &dec_get_format;
+-        }
++	/* Init common settings */
++	/* Width/height may be overriden by ffmpeg after first decoding. */
++	ctx->width  = ctx->coded_width  = ff->param.dec_fmt.det.vid.size.w;
++	ctx->height = ctx->coded_height = ff->param.dec_fmt.det.vid.size.h;
++	ctx->strict_std_compliance = FF_COMPLIANCE_EXPERIMENTAL;
++        ctx->workaround_bugs = FF_BUG_AUTODETECT;
++        ctx->opaque = ff;
++	ctx->get_format = &dec_get_format;
+ 
+-        /* avcodec_open() should be protected */
++	/* Open ffmpeg codec */
+         pj_mutex_lock(ff_mutex);
+-        err = avcodec_open(ctx, codec);
++        err = avcodec_open(ctx, ff->dec);
+         pj_mutex_unlock(ff_mutex);
+         if (err < 0) {
+             print_ffmpeg_err(err);
+-            return PJMEDIA_CODEC_EFAILED;
++            status = PJMEDIA_CODEC_EFAILED;
++	    goto on_error;
+         }
++	dec_opened = PJ_TRUE;
++    }
+ 
+-        if (dir & PJMEDIA_DIR_ENCODING)
+-            ff->enc_ctx = ctx;
+-        if (dir & PJMEDIA_DIR_DECODING)
+-            ff->dec_ctx = ctx;
++    /* Let the codec apply specific settings after the codec opened */
++    if (ff->desc->postopen) {
++	status = (*ff->desc->postopen)(ff);
++	if (status != PJ_SUCCESS)
++	    goto on_error;
+     }
+-    
++
+     return PJ_SUCCESS;
++
++on_error:
++    if (ff->enc_ctx) {
++	if (enc_opened)
++	    avcodec_close(ff->enc_ctx);
++	av_free(ff->enc_ctx);
++	ff->enc_ctx = NULL;
++    }
++    if (ff->dec_ctx) {
++	if (dec_opened)
++	    avcodec_close(ff->dec_ctx);
++	av_free(ff->dec_ctx);
++	ff->dec_ctx = NULL;
++    }
++    return status;
+ }
+ 
+ /*
+@@ -1067,13 +998,6 @@ static pj_status_t ffmpeg_codec_open( pjmedia_vid_codec *codec,
+ 
+     pj_memcpy(&ff->param, attr, sizeof(*attr));
+ 
+-    /* Apply SDP fmtp attribute */
+-    if (ff->desc->parse_fmtp) {
+-	status = (*ff->desc->parse_fmtp)(ff);
+-	if (status != PJ_SUCCESS)
+-	    goto on_error;
+-    }
+-
+     /* Open the codec */
+     ff_mutex = ((struct ffmpeg_factory*)codec->factory)->mutex;
+     status = open_ffmpeg_codec(ff, ff_mutex);
+@@ -1178,18 +1102,17 @@ static pj_status_t  ffmpeg_codec_get_param(pjmedia_vid_codec *codec,
+ 
+ 
+ static pj_status_t  ffmpeg_packetize ( pjmedia_vid_codec *codec,
+-                                       pj_uint8_t *buf,
+-                                       pj_size_t buf_len,
+-                                       unsigned *pos,
++                                       pj_uint8_t *bits,
++                                       pj_size_t bits_len,
++                                       unsigned *bits_pos,
+                                        const pj_uint8_t **payload,
+                                        pj_size_t *payload_len)
+ {
+     ffmpeg_private *ff = (ffmpeg_private*)codec->codec_data;
+ 
+     if (ff->desc->packetize) {
+-	return (*ff->desc->packetize)(buf, buf_len, pos,
+-                                      ff->param.enc_mtu, payload,
+-                                      payload_len);
++	return (*ff->desc->packetize)(ff, bits, bits_len, bits_pos,
++                                      payload, payload_len);
+     }
+ 
+     return PJ_ENOTSUP;
+@@ -1198,14 +1121,15 @@ static pj_status_t  ffmpeg_packetize ( pjmedia_vid_codec *codec,
+ static pj_status_t  ffmpeg_unpacketize(pjmedia_vid_codec *codec,
+                                        const pj_uint8_t *payload,
+                                        pj_size_t   payload_len,
+-                                       pj_uint8_t *buf,
+-                                       pj_size_t  *buf_len)
++                                       pj_uint8_t *bits,
++                                       pj_size_t   bits_len,
++				       unsigned   *bits_pos)
+ {
+     ffmpeg_private *ff = (ffmpeg_private*)codec->codec_data;
+ 
+     if (ff->desc->unpacketize) {
+-        return (*ff->desc->unpacketize)(payload, payload_len,
+-                                        buf, buf_len);
++        return (*ff->desc->unpacketize)(ff, payload, payload_len,
++                                        bits, bits_len, bits_pos);
+     }
+     
+     return PJ_ENOTSUP;
+@@ -1226,18 +1150,25 @@ static pj_status_t ffmpeg_codec_encode( pjmedia_vid_codec *codec,
+     pj_uint8_t *out_buf = (pj_uint8_t*)output->buf;
+     int out_buf_len = output_buf_len;
+     int err;
+-
++    AVRational src_timebase;
+     /* For some reasons (e.g: SSE/MMX usage), the avcodec_encode_video() must
+      * have stack aligned to 16 bytes. Let's try to be safe by preparing the
+      * 16-bytes aligned stack here, in case it's not managed by the ffmpeg.
+      */
+     PJ_ALIGN_DATA(pj_uint32_t i[4], 16);
+ 
++    if ((long)i & 0xF) {
++	PJ_LOG(2,(THIS_FILE, "Stack alignment fails"));
++    }
++
+     /* Check if encoder has been opened */
+     PJ_ASSERT_RETURN(ff->enc_ctx, PJ_EINVALIDOP);
+ 
+     avcodec_get_frame_defaults(&avframe);
+-    avframe.pts = input->timestamp.u64;
++    src_timebase.num = 1;
++    src_timebase.den = ff->desc->info.clock_rate;
++    avframe.pts = av_rescale_q(input->timestamp.u64, src_timebase,
++			       ff->enc_ctx->time_base);
+     
+     for (i[0] = 0; i[0] < ff->enc_vfi->plane_cnt; ++i[0]) {
+         avframe.data[i[0]] = p;
+@@ -1303,7 +1234,7 @@ static pj_status_t ffmpeg_codec_decode( pjmedia_vid_codec *codec,
+     output->timestamp = input->timestamp;
+ 
+ #if LIBAVCODEC_VERSION_MAJOR >= 52 && LIBAVCODEC_VERSION_MINOR >= 72
+-    avpacket.flags = AV_PKT_FLAG_KEY;
++    //avpacket.flags = AV_PKT_FLAG_KEY;
+ #else
+     avpacket.flags = 0;
+ #endif
+diff --git a/pjmedia/src/pjmedia-codec/h263_packetizer.c b/pjmedia/src/pjmedia-codec/h263_packetizer.c
+new file mode 100644
+index 0000000..66d23c9
+--- /dev/null
++++ b/pjmedia/src/pjmedia-codec/h263_packetizer.c
+@@ -0,0 +1,283 @@
++/* $Id$ */
++/* 
++ * Copyright (C) 2008-2009 Teluu Inc. (http://www.teluu.com)
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA 
++ */
++#include <pjmedia-codec/h263_packetizer.h>
++#include <pjmedia/types.h>
++#include <pj/assert.h>
++#include <pj/errno.h>
++#include <pj/string.h>
++
++#define THIS_FILE	"h263_packetizer.c"
++
++
++/* H.263 packetizer definition */
++struct pjmedia_h263_packetizer {
++    /* Current settings */
++    pjmedia_h263_packetizer_cfg cfg;
++    
++    /* Unpacketizer state */
++    unsigned	    unpack_last_sync_pos;
++    pj_bool_t	    unpack_prev_lost;
++};
++
++
++/*
++ * Find synchronization point (PSC, slice, GSBC, EOS, EOSBS) in H.263 
++ * bitstream.
++ */
++static pj_uint8_t* find_sync_point(pj_uint8_t *data,
++				   pj_size_t data_len)
++{
++    pj_uint8_t *p = data, *end = data+data_len;
++
++    while (p < end && *p && *(p+1))
++        ++p;
++
++    if (p == end)
++        return NULL;
++        
++    return p;
++}
++
++
++/*
++ * Find synchronization point (PSC, slice, GSBC, EOS, EOSBS) in H.263 
++ * bitstream, in reversed manner.
++ */
++static pj_uint8_t* find_sync_point_rev(pj_uint8_t *data,
++                                       pj_size_t data_len)
++{
++    pj_uint8_t *p = data+data_len-1;
++
++    while (p > data && *p && *(p+1))
++        --p;
++
++    if (p == data)
++        return (data + data_len);
++        
++    return p;
++}
++
++
++/*
++ * Create H263 packetizer.
++ */
++PJ_DEF(pj_status_t) pjmedia_h263_packetizer_create(
++				pj_pool_t *pool,
++				const pjmedia_h263_packetizer_cfg *cfg,
++				pjmedia_h263_packetizer **p)
++{
++    pjmedia_h263_packetizer *p_;
++
++    PJ_ASSERT_RETURN(pool && p, PJ_EINVAL);
++
++    if (cfg && cfg->mode != PJMEDIA_H263_PACKETIZER_MODE_RFC4629)
++	return PJ_ENOTSUP;
++
++    p_ = PJ_POOL_ZALLOC_T(pool, pjmedia_h263_packetizer);
++    if (cfg) {
++	pj_memcpy(&p_->cfg, cfg, sizeof(*cfg));
++    } else {
++	p_->cfg.mode = PJMEDIA_H263_PACKETIZER_MODE_RFC4629;
++	p_->cfg.mtu = PJMEDIA_MAX_MTU;
++    }
++
++    *p = p_;
++
++    return PJ_SUCCESS;
++}
++
++
++/*
++ * Generate an RTP payload from H.263 frame bitstream, in-place processing.
++ */
++PJ_DEF(pj_status_t) pjmedia_h263_packetize(pjmedia_h263_packetizer *pktz,
++					   pj_uint8_t *bits,
++                                           pj_size_t bits_len,
++                                           unsigned *pos,
++                                           const pj_uint8_t **payload,
++                                           pj_size_t *payload_len)
++{
++    pj_uint8_t *p, *end;
++
++    pj_assert(pktz && bits && pos && payload && payload_len);
++    pj_assert(*pos <= bits_len);
++
++    p = bits + *pos;
++    end = bits + bits_len;
++
++    /* Put two octets payload header */
++    if ((end-p > 2) && *p==0 && *(p+1)==0) {
++        /* The bitstream starts with synchronization point, just override
++         * the two zero octets (sync point mark) for payload header.
++         */
++        *p = 0x04;
++    } else {
++        /* Not started in synchronization point, we will use two octets
++         * preceeding the bitstream for payload header!
++         */
++
++	if (*pos < 2) {
++	    /* Invalid H263 bitstream, it's not started with PSC */
++	    return PJ_EINVAL;
++	}
++
++	p -= 2;
++        *p = 0;
++    }
++    *(p+1) = 0;
++
++    /* When bitstream truncation needed because of payload length/MTU 
++     * limitation, try to use sync point for the payload boundary.
++     */
++    if (end-p > pktz->cfg.mtu) {
++	end = find_sync_point_rev(p+2, pktz->cfg.mtu-2);
++    }
++
++    *payload = p;
++    *payload_len = end-p;
++    *pos = end - bits;
++
++    return PJ_SUCCESS;
++}
++
++
++/*
++ * Append an RTP payload to a H.263 picture bitstream.
++ */
++PJ_DEF(pj_status_t) pjmedia_h263_unpacketize (pjmedia_h263_packetizer *pktz,
++					      const pj_uint8_t *payload,
++                                              pj_size_t payload_len,
++                                              pj_uint8_t *bits,
++                                              pj_size_t bits_size,
++					      unsigned *pos)
++{
++    pj_uint8_t P, V, PLEN;
++    const pj_uint8_t *p = payload;
++    pj_uint8_t *q;
++
++    q = bits + *pos;
++
++    /* Check if this is a missing/lost packet */
++    if (payload == NULL) {
++	pktz->unpack_prev_lost = PJ_TRUE;
++	return PJ_SUCCESS;
++    }
++
++    /* H263 payload header size is two octets */
++    if (payload_len < 2) {
++	/* Invalid bitstream, discard this payload */
++	pktz->unpack_prev_lost = PJ_TRUE;
++	return PJ_EINVAL;
++    }
++
++    /* Get payload header info */
++    P = *p & 0x04;
++    V = *p & 0x02;
++    PLEN = ((*p & 0x01) << 5) + ((*(p+1) & 0xF8)>>3);
++
++    /* Get start bitstream pointer */
++    p += 2;	    /* Skip payload header */
++    if (V)
++        p += 1;	    /* Skip VRC data */
++    if (PLEN)
++        p += PLEN;  /* Skip extra picture header data */
++
++    /* Get bitstream length */
++    if (payload_len > (pj_size_t)(p - payload)) {
++	payload_len -= (p - payload);
++    } else {
++	/* Invalid bitstream, discard this payload */
++	pktz->unpack_prev_lost = PJ_TRUE;
++	return PJ_EINVAL;
++    }
++
++    /* Validate bitstream length */
++    if (bits_size < *pos + payload_len + 2) {
++	/* Insufficient bistream buffer, discard this payload */
++	pj_assert(!"Insufficient H.263 bitstream buffer");
++	pktz->unpack_prev_lost = PJ_TRUE;
++	return PJ_ETOOSMALL;
++    }
++
++    /* Start writing bitstream */
++
++    /* No sync point flag */
++    if (!P) {
++	if (*pos == 0) {
++	    /* Previous packet must be lost */
++	    pktz->unpack_prev_lost = PJ_TRUE;
++
++	    /* If there is extra picture header, let's use it. */
++	    if (PLEN) {
++		/* Write two zero octets for PSC */
++		*q++ = 0;
++		*q++ = 0;
++		/* Copy the picture header */
++		p -= PLEN;
++		pj_memcpy(q, p, PLEN);
++		p += PLEN;
++		q += PLEN;
++	    }
++	} else if (pktz->unpack_prev_lost) {
++	    /* If prev packet was lost, revert the bitstream pointer to
++	     * the last sync point.
++	     */
++	    pj_assert(pktz->unpack_last_sync_pos <= *pos);
++	    q = bits + pktz->unpack_last_sync_pos;
++	}
++
++	/* There was packet lost, see if this payload contain sync point
++	 * (usable data).
++	 */
++	if (pktz->unpack_prev_lost) {
++	    pj_uint8_t *sync;
++	    sync = find_sync_point((pj_uint8_t*)p, payload_len);
++	    if (sync) {
++		/* Got sync point, update P/sync-point flag */
++		P = 1;
++		/* Skip the two zero octets */
++		sync += 2;
++		/* Update payload length and start bitstream pointer */
++		payload_len -= (sync - p);
++		p = sync;
++	    } else {
++		/* No sync point in it, just discard this payload */
++		return PJ_EIGNORED;
++	    }
++	}
++    }
++
++    /* Write two zero octets when payload flagged with sync point */
++    if (P) {
++	pktz->unpack_last_sync_pos = q - bits;
++        *q++ = 0;
++        *q++ = 0;
++    }
++
++    /* Write the payload to the bitstream */
++    pj_memcpy(q, p, payload_len);
++    q += payload_len;
++
++    /* Update the bitstream writing offset */
++    *pos = q - bits;
++
++    pktz->unpack_prev_lost = PJ_FALSE;
++
++    return PJ_SUCCESS;
++}
+diff --git a/pjmedia/src/pjmedia-codec/h264_packetizer.c b/pjmedia/src/pjmedia-codec/h264_packetizer.c
+new file mode 100644
+index 0000000..091fb8b
+--- /dev/null
++++ b/pjmedia/src/pjmedia-codec/h264_packetizer.c
+@@ -0,0 +1,523 @@
++/* $Id$ */
++/* 
++ * Copyright (C) 2011 Teluu Inc. (http://www.teluu.com)
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA 
++ */
++#include <pjmedia-codec/h264_packetizer.h>
++#include <pjmedia/types.h>
++#include <pj/assert.h>
++#include <pj/errno.h>
++#include <pj/log.h>
++#include <pj/pool.h>
++#include <pj/string.h>
++
++#define THIS_FILE		"h264_packetizer.c"
++
++#define DBG_PACKETIZE		0
++#define DBG_UNPACKETIZE		0
++
++
++/* H.264 packetizer definition */
++struct pjmedia_h264_packetizer
++{
++    /* Current settings */
++    pjmedia_h264_packetizer_cfg cfg;
++    
++    /* Unpacketizer state */
++    unsigned	    unpack_last_sync_pos;
++    pj_bool_t	    unpack_prev_lost;
++};
++
++
++/* Enumeration of H.264 NAL unit types */
++enum
++{
++    NAL_TYPE_SINGLE_NAL_MIN	= 1,
++    NAL_TYPE_SINGLE_NAL_MAX	= 23,
++    NAL_TYPE_STAP_A		= 24,
++    NAL_TYPE_FU_A		= 28,
++};
++
++
++/*
++ * Find next NAL unit from the specified H.264 bitstream data.
++ */
++static pj_uint8_t* find_next_nal_unit(pj_uint8_t *start,
++                                      pj_uint8_t *end)
++{
++    pj_uint8_t *p = start;
++
++    /* Simply lookup "0x000001" pattern */
++    while (p <= end-3 && (p[0] || p[1] || p[2]!=1))
++        ++p;
++
++    if (p > end-3)
++	/* No more NAL unit in this bitstream */
++        return NULL;
++
++    /* Include 8 bits leading zero */
++    if (p>start && *(p-1)==0)
++	return (p-1);
++
++    return p;
++}
++
++
++/*
++ * Create H264 packetizer.
++ */
++PJ_DEF(pj_status_t) pjmedia_h264_packetizer_create(
++				pj_pool_t *pool,
++				const pjmedia_h264_packetizer_cfg *cfg,
++				pjmedia_h264_packetizer **p)
++{
++    pjmedia_h264_packetizer *p_;
++
++    PJ_ASSERT_RETURN(pool && p, PJ_EINVAL);
++
++    if (cfg &&
++	cfg->mode != PJMEDIA_H264_PACKETIZER_MODE_NON_INTERLEAVED &&
++	cfg->mode != PJMEDIA_H264_PACKETIZER_MODE_SINGLE_NAL)
++    {
++	return PJ_ENOTSUP;
++    }
++
++    p_ = PJ_POOL_ZALLOC_T(pool, pjmedia_h264_packetizer);
++    if (cfg) {
++	pj_memcpy(&p_->cfg, cfg, sizeof(*cfg));
++    } else {
++	p_->cfg.mode = PJMEDIA_H264_PACKETIZER_MODE_NON_INTERLEAVED;
++	p_->cfg.mtu = PJMEDIA_MAX_MTU;
++    }
++
++    *p = p_;
++
++    return PJ_SUCCESS;
++}
++
++
++
++/*
++ * Generate an RTP payload from H.264 frame bitstream, in-place processing.
++ */
++PJ_DEF(pj_status_t) pjmedia_h264_packetize(pjmedia_h264_packetizer *pktz,
++					   pj_uint8_t *buf,
++                                           pj_size_t buf_len,
++                                           unsigned *pos,
++                                           const pj_uint8_t **payload,
++                                           pj_size_t *payload_len)
++{
++    pj_uint8_t *nal_start = NULL, *nal_end = NULL, *nal_octet = NULL;
++    pj_uint8_t *p, *end;
++    enum { 
++	HEADER_SIZE_FU_A	     = 2,
++	HEADER_SIZE_STAP_A	     = 3,
++    };
++    enum { MAX_NALS_IN_AGGR = 32 };
++
++#if DBG_PACKETIZE
++    if (*pos == 0 && buf_len) {
++	PJ_LOG(3, ("h264pack", "<< Start packing new frame >>"));
++    }
++#endif
++
++    p = buf + *pos;
++    end = buf + buf_len;
++
++    /* Find NAL unit startcode */
++    if (end-p >= 4)
++	nal_start = find_next_nal_unit(p, p+4);
++    if (nal_start) {
++	/* Get NAL unit octet pointer */
++	while (*nal_start++ == 0);
++	nal_octet = nal_start;
++    } else {
++	/* This NAL unit is being fragmented */
++	nal_start = p;
++    }
++
++    /* Get end of NAL unit */
++    p = nal_start+pktz->cfg.mtu+1;
++    if (p > end || pktz->cfg.mode==PJMEDIA_H264_PACKETIZER_MODE_SINGLE_NAL) 
++	p = end;
++    nal_end = find_next_nal_unit(nal_start, p); 
++    if (!nal_end)
++	nal_end = p;
++
++    /* Validate MTU vs NAL length on single NAL unit packetization */
++    if ((pktz->cfg.mode==PJMEDIA_H264_PACKETIZER_MODE_SINGLE_NAL) &&
++	nal_end - nal_start > pktz->cfg.mtu)
++    {
++	pj_assert(!"MTU too small for H.264 single NAL packetization mode");
++	return PJ_ETOOSMALL;
++    }
++
++    /* Evaluate the proper payload format structure */
++
++    /* Fragmentation (FU-A) packet */
++    if ((pktz->cfg.mode != PJMEDIA_H264_PACKETIZER_MODE_SINGLE_NAL) &&
++	(!nal_octet || nal_end-nal_start > pktz->cfg.mtu))
++    {
++	pj_uint8_t NRI, TYPE;
++
++	if (nal_octet) {
++	    /* We have NAL unit octet, so this is the first fragment */
++	    NRI = (*nal_octet & 0x60) >> 5;
++	    TYPE = *nal_octet & 0x1F;
++
++	    /* Skip nal_octet in nal_start to be overriden by FU header */
++	    ++nal_start;
++	} else {
++	    /* Not the first fragment, get NRI and NAL unit type
++	     * from the previous fragment.
++	     */
++	    p = nal_start - pktz->cfg.mtu;
++	    NRI = (*p & 0x60) >> 5;
++	    TYPE = *(p+1) & 0x1F;
++	}
++
++	/* Init FU indicator (one octet: F+NRI+TYPE) */
++	p = nal_start - HEADER_SIZE_FU_A;
++	*p = (NRI << 5) | NAL_TYPE_FU_A;
++	++p;
++
++	/* Init FU header (one octed: S+E+R+TYPE) */
++	*p = TYPE;
++	if (nal_octet)
++	    *p |= (1 << 7); /* S bit flag = start of fragmentation */
++	if (nal_end-nal_start+HEADER_SIZE_FU_A <= pktz->cfg.mtu)
++	    *p |= (1 << 6); /* E bit flag = end of fragmentation */
++
++	/* Set payload, payload length */
++	*payload = nal_start - HEADER_SIZE_FU_A;
++	if (nal_end-nal_start+HEADER_SIZE_FU_A > pktz->cfg.mtu)
++	    *payload_len = pktz->cfg.mtu;
++	else
++	    *payload_len = nal_end - nal_start + HEADER_SIZE_FU_A;
++	*pos = *payload + *payload_len - buf;
++
++#if DBG_PACKETIZE
++	PJ_LOG(3, ("h264pack", "Packetized fragmented H264 NAL unit "
++		   "(pos=%d, type=%d, NRI=%d, S=%d, E=%d, len=%d/%d)",
++		   *payload-buf, TYPE, NRI, *p>>7, (*p>>6)&1, *payload_len,
++		   buf_len));
++#endif
++
++	return PJ_SUCCESS;
++    }
++
++    /* Aggregation (STAP-A) packet */
++    if ((pktz->cfg.mode != PJMEDIA_H264_PACKETIZER_MODE_SINGLE_NAL) &&
++	(nal_end != end) &&
++	(nal_end - nal_start + HEADER_SIZE_STAP_A) < pktz->cfg.mtu) 
++    {
++	int total_size;
++	unsigned nal_cnt = 1;
++	pj_uint8_t *nal[MAX_NALS_IN_AGGR];
++	pj_size_t nal_size[MAX_NALS_IN_AGGR];
++	pj_uint8_t NRI;
++
++	pj_assert(nal_octet);
++
++	/* Init the first NAL unit in the packet */
++	nal[0] = nal_start;
++	nal_size[0] = nal_end - nal_start;
++	total_size = nal_size[0] + HEADER_SIZE_STAP_A;
++	NRI = (*nal_octet & 0x60) >> 5;
++
++	/* Populate next NAL units */
++	while (nal_cnt < MAX_NALS_IN_AGGR) {
++	    pj_uint8_t *tmp_end;
++
++	    /* Find start address of the next NAL unit */
++	    p = nal[nal_cnt-1] + nal_size[nal_cnt-1];
++	    while (*p++ == 0);
++	    nal[nal_cnt] = p;
++
++	    /* Find end address of the next NAL unit */
++	    tmp_end = p + (pktz->cfg.mtu - total_size);
++	    if (tmp_end > end)
++		tmp_end = end;
++	    p = find_next_nal_unit(p+1, tmp_end);
++	    if (p) {
++		nal_size[nal_cnt] = p - nal[nal_cnt];
++	    } else {
++		break;
++	    }
++
++	    /* Update total payload size (2 octet NAL size + NAL) */
++	    total_size += (2 + nal_size[nal_cnt]);
++	    if (total_size <= pktz->cfg.mtu) {
++		pj_uint8_t tmp_nri;
++
++		/* Get maximum NRI of the aggregated NAL units */
++		tmp_nri = (*(nal[nal_cnt]-1) & 0x60) >> 5;
++		if (tmp_nri > NRI)
++		    NRI = tmp_nri;
++	    } else {
++		break;
++	    }
++
++	    ++nal_cnt;
++	}
++
++	/* Only use STAP-A when we found more than one NAL units */
++	if (nal_cnt > 1) {
++	    unsigned i;
++
++	    /* Init STAP-A NAL header (F+NRI+TYPE) */
++	    p = nal[0] - HEADER_SIZE_STAP_A;
++	    *p++ = (NRI << 5) | NAL_TYPE_STAP_A;
++
++	    /* Append all populated NAL units into payload (SIZE+NAL) */
++	    for (i = 0; i < nal_cnt; ++i) {
++		/* Put size (2 octets in network order) */
++		pj_assert(nal_size[i] <= 0xFFFF);
++		*p++ = (pj_uint8_t)(nal_size[i] >> 8);
++		*p++ = (pj_uint8_t)(nal_size[i] & 0xFF);
++		
++		/* Append NAL unit, watchout memmove()-ing bitstream! */
++		if (p != nal[i])
++		    pj_memmove(p, nal[i], nal_size[i]);
++		p += nal_size[i];
++	    }
++
++	    /* Set payload, payload length, and pos */
++	    *payload = nal[0] - HEADER_SIZE_STAP_A;
++	    pj_assert(*payload >= buf+*pos);
++	    *payload_len = p - *payload;
++	    *pos = nal[nal_cnt-1] + nal_size[nal_cnt-1] - buf;
++
++#if DBG_PACKETIZE
++	    PJ_LOG(3, ("h264pack", "Packetized aggregation of "
++		       "%d H264 NAL units (pos=%d, NRI=%d len=%d/%d)",
++		       nal_cnt, *payload-buf, NRI, *payload_len, buf_len));
++#endif
++
++	    return PJ_SUCCESS;
++	}
++    }
++
++    /* Single NAL unit packet */
++    pj_assert(nal_octet);
++
++    *payload = nal_start;
++    *payload_len = nal_end - nal_start;
++    *pos = nal_end - buf;
++
++#if DBG_PACKETIZE
++    PJ_LOG(3, ("h264pack", "Packetized single H264 NAL unit "
++	       "(pos=%d, type=%d, NRI=%d, len=%d/%d)",
++	       nal_start-buf, *nal_octet&0x1F, (*nal_octet&0x60)>>5,
++	       *payload_len, buf_len));
++#endif
++
++    return PJ_SUCCESS;
++}
++
++
++/*
++ * Append RTP payload to a H.264 picture bitstream. Note that the only
++ * payload format that cares about packet lost is the NAL unit
++ * fragmentation format (FU-A/B), so we will only manage the "prev_lost"
++ * state for the FU-A/B packets.
++ */
++PJ_DEF(pj_status_t) pjmedia_h264_unpacketize(pjmedia_h264_packetizer *pktz,
++					     const pj_uint8_t *payload,
++                                             pj_size_t   payload_len,
++                                             pj_uint8_t *bits,
++                                             pj_size_t   bits_len,
++					     unsigned   *bits_pos)
++{
++    const pj_uint8_t nal_start_code[3] = {0, 0, 1};
++    enum { MIN_PAYLOAD_SIZE = 2 };
++    pj_uint8_t nal_type;
++
++    PJ_UNUSED_ARG(pktz);
++
++#if DBG_UNPACKETIZE
++    if (*bits_pos == 0 && payload_len) {
++	PJ_LOG(3, ("h264unpack", ">> Start unpacking new frame <<"));
++    }
++#endif
++
++    /* Check if this is a missing/lost packet */
++    if (payload == NULL) {
++	pktz->unpack_prev_lost = PJ_TRUE;
++	return PJ_SUCCESS;
++    }
++
++    /* H264 payload size */
++    if (payload_len < MIN_PAYLOAD_SIZE) {
++	/* Invalid bitstream, discard this payload */
++	pktz->unpack_prev_lost = PJ_TRUE;
++	return PJ_EINVAL;
++    }
++
++    nal_type = *payload & 0x1F;
++    if (nal_type >= NAL_TYPE_SINGLE_NAL_MIN &&
++	nal_type <= NAL_TYPE_SINGLE_NAL_MAX)
++    {
++	/* Single NAL unit packet */
++	pj_uint8_t *p = bits + *bits_pos;
++
++	/* Validate bitstream length */
++	if (bits_len-*bits_pos < payload_len+PJ_ARRAY_SIZE(nal_start_code)) {
++	    /* Insufficient bistream buffer, discard this payload */
++	    pj_assert(!"Insufficient H.263 bitstream buffer");
++	    return PJ_ETOOSMALL;
++	}
++
++	/* Write NAL unit start code */
++	pj_memcpy(p, &nal_start_code, PJ_ARRAY_SIZE(nal_start_code));
++	p += PJ_ARRAY_SIZE(nal_start_code);
++
++	/* Write NAL unit */
++	pj_memcpy(p, payload, payload_len);
++	p += payload_len;
++
++	/* Update the bitstream writing offset */
++	*bits_pos = p - bits;
++	pktz->unpack_last_sync_pos = *bits_pos;
++
++#if DBG_UNPACKETIZE
++	PJ_LOG(3, ("h264unpack", "Unpacked single H264 NAL unit "
++		   "(type=%d, NRI=%d, len=%d)",
++		   nal_type, (*payload&0x60)>>5, payload_len));
++#endif
++
++    }
++    else if (nal_type == NAL_TYPE_STAP_A)
++    {
++	/* Aggregation packet */
++	pj_uint8_t *p, *p_end;
++	const pj_uint8_t *q, *q_end;
++	unsigned cnt = 0;
++
++	/* Validate bitstream length */
++	if (bits_len - *bits_pos < payload_len + 32) {
++	    /* Insufficient bistream buffer, discard this payload */
++	    pj_assert(!"Insufficient H.263 bitstream buffer");
++	    return PJ_ETOOSMALL;
++	}
++
++	/* Fill bitstream */
++	p = bits + *bits_pos;
++	p_end = bits + bits_len;
++	q = payload + 1;
++	q_end = payload + payload_len;
++	while (q < q_end && p < p_end) {
++	    pj_uint16_t tmp_nal_size;
++
++	    /* Write NAL unit start code */
++	    pj_memcpy(p, &nal_start_code, PJ_ARRAY_SIZE(nal_start_code));
++	    p += PJ_ARRAY_SIZE(nal_start_code);
++
++	    /* Get NAL unit size */
++	    tmp_nal_size = (*q << 8) | *(q+1);
++	    q += 2;
++	    if (q + tmp_nal_size > q_end) {
++		/* Invalid bitstream, discard the rest of the payload */
++		return PJ_EINVAL;
++	    }
++
++	    /* Write NAL unit */
++	    pj_memcpy(p, q, tmp_nal_size);
++	    p += tmp_nal_size;
++	    q += tmp_nal_size;
++	    ++cnt;
++
++	    /* Update the bitstream writing offset */
++	    *bits_pos = p - bits;
++	    pktz->unpack_last_sync_pos = *bits_pos;
++	}
++
++#if DBG_UNPACKETIZE
++	PJ_LOG(3, ("h264unpack", "Unpacked %d H264 NAL units (len=%d)",
++		   cnt, payload_len));
++#endif
++
++    }
++    else if (nal_type == NAL_TYPE_FU_A)
++    {
++	/* Fragmentation packet */
++	pj_uint8_t *p;
++	const pj_uint8_t *q = payload;
++	pj_uint8_t NRI, TYPE, S, E;
++
++	p = bits + *bits_pos;
++
++	/* Validate bitstream length */
++	if (bits_len-*bits_pos < payload_len+PJ_ARRAY_SIZE(nal_start_code)) {
++	    /* Insufficient bistream buffer, drop this packet */
++	    pj_assert(!"Insufficient H.263 bitstream buffer");
++	    pktz->unpack_prev_lost = PJ_TRUE;
++	    return PJ_ETOOSMALL;
++	}
++
++	/* Get info */
++	S = *(q+1) & 0x80;    /* Start bit flag	*/
++	E = *(q+1) & 0x40;    /* End bit flag	*/
++	TYPE = *(q+1) & 0x1f;
++	NRI = (*q & 0x60) >> 5;
++
++	/* Fill bitstream */
++	if (S) {
++	    /* This is the first part, write NAL unit start code */
++	    pj_memcpy(p, &nal_start_code, PJ_ARRAY_SIZE(nal_start_code));
++	    p += PJ_ARRAY_SIZE(nal_start_code);
++
++	    /* Write NAL unit octet */
++	    *p++ = (NRI << 5) | TYPE;
++	} else if (pktz->unpack_prev_lost) {
++	    /* If prev packet was lost, revert the bitstream pointer to
++	     * the last sync point.
++	     */
++	    pj_assert(pktz->unpack_last_sync_pos <= *bits_pos);
++	    *bits_pos = pktz->unpack_last_sync_pos;
++	    /* And discard this payload (and the following fragmentation
++	     * payloads carrying this same NAL unit.
++	     */
++	    return PJ_EIGNORED;
++	}
++	q += 2;
++
++	/* Write NAL unit */
++	pj_memcpy(p, q, payload_len - 2);
++	p += (payload_len - 2);
++
++	/* Update the bitstream writing offset */
++	*bits_pos = p - bits;
++	if (E) {
++	    /* Update the sync pos only if the end bit flag is set */
++	    pktz->unpack_last_sync_pos = *bits_pos;
++	}
++
++#if DBG_UNPACKETIZE
++	PJ_LOG(3, ("h264unpack", "Unpacked fragmented H264 NAL unit "
++		   "(type=%d, NRI=%d, len=%d)",
++		   TYPE, NRI, payload_len));
++#endif
++
++    } else {
++	*bits_pos = 0;
++	return PJ_ENOTSUP;
++    }
++
++    pktz->unpack_prev_lost = PJ_FALSE;
++
++    return PJ_SUCCESS;
++}
+diff --git a/pjmedia/src/pjmedia/sdp_neg.c b/pjmedia/src/pjmedia/sdp_neg.c
+index 1087efc..2fb0895 100644
+--- a/pjmedia/src/pjmedia/sdp_neg.c
++++ b/pjmedia/src/pjmedia/sdp_neg.c
+@@ -52,7 +52,7 @@ static const char *state_str[] =
+     "STATE_DONE",
+ };
+ 
+-#define GET_FMTP_IVAL(ival, fmtp, param, default_val) \
++#define GET_FMTP_IVAL_BASE(ival, base, fmtp, param, default_val) \
+     do { \
+ 	pj_str_t s; \
+ 	char *p; \
+@@ -63,9 +63,13 @@ static const char *state_str[] =
+ 	} \
+ 	pj_strset(&s, p + param.slen, fmtp.fmt_param.slen - \
+ 		  (p - fmtp.fmt_param.ptr) - param.slen); \
+-	ival = pj_strtoul(&s); \
++	ival = pj_strtoul2(&s, NULL, base); \
+     } while (0)
+ 
++#define GET_FMTP_IVAL(ival, fmtp, param, default_val) \
++	GET_FMTP_IVAL_BASE(ival, 10, fmtp, param, default_val)
++
++
+ /*
+  * Get string representation of negotiator state.
+  */
+@@ -678,6 +682,49 @@ static pj_bool_t match_amr( const pjmedia_sdp_media *offer,
+ }
+ 
+ 
++/* Matching H.264 between offer and answer. */
++static pj_bool_t match_h264( const pjmedia_sdp_media *offer,
++			     unsigned o_fmt_idx,
++			     const pjmedia_sdp_media *answer,
++			     unsigned a_fmt_idx)
++{
++    const pjmedia_sdp_attr *attr_ans;
++    const pjmedia_sdp_attr *attr_ofr;
++    pjmedia_sdp_fmtp fmtp;
++    pj_uint32_t profile1, profile2;
++    unsigned pack_mode1, pack_mode2;
++    const pj_str_t STR_PROFILE   = {"profile-level-id=", 17};
++    const pj_str_t STR_PACK_MODE = {"packetization-mode=", 19};
++
++    /* Parse offer */
++    attr_ofr = pjmedia_sdp_media_find_attr2(offer, "fmtp", 
++					    &offer->desc.fmt[o_fmt_idx]);
++    if (!attr_ofr)
++	return PJ_FALSE;
++
++    if (pjmedia_sdp_attr_get_fmtp(attr_ofr, &fmtp) != PJ_SUCCESS)
++	return PJ_FALSE;
++
++    GET_FMTP_IVAL_BASE(profile1, 16, fmtp, STR_PROFILE, 0x42000A);
++    GET_FMTP_IVAL(pack_mode1, fmtp, STR_PACK_MODE, 0);
++
++    /* Parse answer */
++    attr_ans = pjmedia_sdp_media_find_attr2(answer, "fmtp", 
++					    &answer->desc.fmt[a_fmt_idx]);
++    if (!attr_ans)
++	return PJ_FALSE;
++
++    if (pjmedia_sdp_attr_get_fmtp(attr_ans, &fmtp) != PJ_SUCCESS)
++	return PJ_FALSE;
++
++    GET_FMTP_IVAL_BASE(profile2, 16, fmtp, STR_PROFILE, 0x42000A);
++    GET_FMTP_IVAL(pack_mode2, fmtp, STR_PACK_MODE, 0);
++
++    /* Compare bitrate in answer and offer. */
++    return ((profile1 == profile2) && (pack_mode1 == pack_mode2));
++}
++
++
+ /* Toggle AMR octet-align setting in the fmtp.
+  */
+ static pj_status_t amr_toggle_octet_align(pj_pool_t *pool,
+@@ -876,7 +923,8 @@ static pj_status_t process_m_answer( pj_pool_t *pool,
+ 			     (ar.param.slen==1 && *ar.param.ptr=='1')))
+ 			{
+ 			    /* Further check for G7221, negotiate bitrate. */
+-			    if (pj_stricmp2(&or_.enc_name, "G7221") == 0) {
++			    if (pj_stricmp2(&or_.enc_name, "G7221") == 0)
++			    {
+ 				if (match_g7221(offer, i, answer, j))
+ 				    break;
+ 			    } else
+@@ -887,6 +935,12 @@ static pj_status_t process_m_answer( pj_pool_t *pool,
+ 				if (match_amr(offer, i, answer, j, PJ_FALSE, 
+ 					      NULL))
+ 				    break;
++			    } else
++			    /* Further check for H264, negotiate fmtp. */
++			    if (pj_stricmp2(&or_.enc_name, "H264") == 0)
++			    {
++				if (match_h264(offer, i, answer, j))
++				    break;
+ 			    } else {
+ 				/* Match! */
+ 				break;
+@@ -1199,6 +1253,11 @@ static pj_status_t match_offer(pj_pool_t *pool,
+ 						   preanswer, a_med_idx,
+ 						   PJ_TRUE, &pt_amr_need_adapt))
+ 					continue;
++				} else
++				if (pj_stricmp2(&or_.enc_name, "H264") == 0 &&
++				    !match_h264(master, i, slave, j))
++				{
++				    continue;
+ 				}
+ 				found_matching_codec = 1;
+ 			    } else {
+diff --git a/pjmedia/src/pjmedia/vid_codec_util.c b/pjmedia/src/pjmedia/vid_codec_util.c
+new file mode 100644
+index 0000000..92232f7
+--- /dev/null
++++ b/pjmedia/src/pjmedia/vid_codec_util.c
+@@ -0,0 +1,354 @@
++/* $Id$ */
++/* 
++ * Copyright (C) 2008-2009 Teluu Inc. (http://www.teluu.com)
++ * Copyright (C) 2003-2008 Benny Prijono <benny@prijono.org>
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA 
++ */
++#include <pjmedia/vid_codec_util.h>
++#include <pjmedia/errno.h>
++#include <pjlib-util/base64.h>
++#include <pj/math.h>
++
++#define THIS_FILE   "vid_codec_util.c"
++
++
++/* ITU resolution definition */
++struct mpi_resolution_t
++{
++    pj_str_t		name;    
++    pjmedia_rect_size	size;
++}
++mpi_resolutions [] =
++{
++    {{"CIF",3},     {352,288}},
++    {{"QCIF",4},    {176,144}},
++    {{"SQCIF",5},   {88,72}},
++    {{"CIF4",4},    {704,576}},
++    {{"CIF16",5},   {1408,1142}},
++};
++
++
++/* Parse fmtp value for custom resolution, e.g: "CUSTOM=800,600,2" */
++static pj_status_t parse_custom_res_fmtp(const pj_str_t *fmtp_val,
++					 pjmedia_rect_size *size,
++					 unsigned *mpi)
++{
++    const char *p, *p_end;
++    pj_str_t token;
++    unsigned long val[3] = {0};
++    unsigned i = 0;
++
++    p = token.ptr = fmtp_val->ptr;
++    p_end = p + fmtp_val->slen;
++
++    while (p<=p_end && i<PJ_ARRAY_SIZE(val)) {
++	if (*p==',' || p==p_end) {
++	    token.slen = (char*)p - token.ptr;
++	    val[i++] = pj_strtoul(&token);
++	    token.ptr = (char*)p+1;
++	}
++	++p;
++    }
++
++    if (!val[0] || !val[1])
++	return PJ_ETOOSMALL;
++
++    if (val[2]<1 || val[2]>32)
++	return PJ_EINVAL;
++
++    size->w = val[0];
++    size->h = val[1];
++    *mpi = val[2];
++    return PJ_SUCCESS;
++}
++
++
++/* H263 fmtp parser */
++PJ_DEF(pj_status_t) pjmedia_vid_codec_parse_h263_fmtp(
++				    const pjmedia_codec_fmtp *fmtp,
++				    pjmedia_vid_codec_h263_fmtp *h263_fmtp)
++{
++    const pj_str_t CUSTOM = {"CUSTOM", 6};
++    unsigned i;
++
++    pj_bzero(h263_fmtp, sizeof(*h263_fmtp));
++
++    for (i=0; i<fmtp->cnt; ++i) {
++	unsigned j;
++	pj_bool_t parsed = PJ_FALSE;
++
++	if (h263_fmtp->mpi_cnt >= PJ_ARRAY_SIZE(h263_fmtp->mpi)) {
++	    pj_assert(!"Too small MPI array in H263 fmtp");
++	    continue;
++	}
++
++	/* Standard size MPIs */
++	for (j=0; j<PJ_ARRAY_SIZE(mpi_resolutions) && !parsed; ++j) {
++	    if (pj_stricmp(&fmtp->param[i].name, &mpi_resolutions[j].name)==0)
++	    {
++		unsigned mpi;
++
++		mpi = pj_strtoul(&fmtp->param[i].val);
++		if (mpi<1 || mpi>32)
++		    return PJMEDIA_SDP_EINFMTP;
++
++		h263_fmtp->mpi[h263_fmtp->mpi_cnt].size = 
++						    mpi_resolutions[j].size;
++		h263_fmtp->mpi[h263_fmtp->mpi_cnt].val = mpi;
++		++h263_fmtp->mpi_cnt;
++		parsed = PJ_TRUE;
++	    }
++	}
++	if (parsed)
++	    continue;
++
++	/* Custom size MPIs */
++	if (pj_stricmp(&fmtp->param[i].name, &CUSTOM)==0) {
++	    pjmedia_rect_size size;
++	    unsigned mpi;
++	    pj_status_t status;
++
++	    status = parse_custom_res_fmtp(&fmtp->param[i].val, &size, &mpi);
++	    if (status != PJ_SUCCESS)
++		return PJMEDIA_SDP_EINFMTP;
++
++	    h263_fmtp->mpi[h263_fmtp->mpi_cnt].size = size;
++	    h263_fmtp->mpi[h263_fmtp->mpi_cnt].val = mpi;
++	    ++h263_fmtp->mpi_cnt;
++	}
++    }
++
++    return PJ_SUCCESS;
++}
++
++
++PJ_DEF(pj_status_t) pjmedia_vid_codec_h263_apply_fmtp(
++				pjmedia_vid_codec_param *param)
++{
++    if (param->dir & PJMEDIA_DIR_ENCODING) {
++	pjmedia_vid_codec_h263_fmtp fmtp_loc, fmtp_rem;
++	pjmedia_rect_size size = {0};
++	unsigned mpi = 0;
++	pjmedia_video_format_detail *vfd;
++	pj_status_t status;
++
++	/* Get local param */
++	status = pjmedia_vid_codec_parse_h263_fmtp(&param->dec_fmtp,
++						   &fmtp_loc);
++	if (status != PJ_SUCCESS)
++	    return status;
++
++	/* Get remote param */
++	status = pjmedia_vid_codec_parse_h263_fmtp(&param->enc_fmtp,
++						   &fmtp_rem);
++	if (status != PJ_SUCCESS)
++	    return status;
++
++	/* Negotiate size & MPI setting */
++	if (fmtp_rem.mpi_cnt == 0) {
++	    /* Remote doesn't specify MPI setting, send QCIF=1 */
++	    size.w = 176;
++	    size.h = 144;
++	    mpi	   = 1;
++	} else if (fmtp_loc.mpi_cnt == 0) {
++	    /* Local MPI setting not set, just use remote preference. */
++	    size = fmtp_rem.mpi[0].size;
++	    mpi  = fmtp_rem.mpi[0].val;
++	} else {
++	    /* Both have preferences, let's try to match them */
++	    unsigned i, j;
++	    pj_bool_t matched = PJ_FALSE;
++	    pj_uint32_t min_diff = 0xFFFFFFFF;
++	    pj_uint32_t loc_sq, rem_sq, diff;
++
++	    /* Find the exact size match or the closest size, then choose
++	     * the highest MPI among the match/closest pair.
++	     */
++	    for (i = 0; i < fmtp_rem.mpi_cnt && !matched; ++i) {
++		rem_sq = fmtp_rem.mpi[i].size.w * fmtp_rem.mpi[i].size.h;
++		for (j = 0; j < fmtp_loc.mpi_cnt; ++j) {
++		    /* See if we got exact match */
++		    if (fmtp_rem.mpi[i].size.w == fmtp_loc.mpi[j].size.w &&
++			fmtp_rem.mpi[i].size.h == fmtp_loc.mpi[j].size.h)
++		    {
++			size = fmtp_rem.mpi[i].size;
++			mpi  = PJ_MAX(fmtp_rem.mpi[i].val,
++				      fmtp_loc.mpi[j].val);
++			matched = PJ_TRUE;
++			break;
++		    }
++
++		    /* Otherwise keep looking for the closest match */
++		    loc_sq = fmtp_loc.mpi[j].size.w * fmtp_loc.mpi[j].size.h;
++		    diff = loc_sq>rem_sq? (loc_sq-rem_sq):(rem_sq-loc_sq);
++		    if (diff < min_diff) {
++			size = rem_sq<loc_sq? fmtp_rem.mpi[i].size :
++					      fmtp_loc.mpi[j].size;
++			mpi  = PJ_MAX(fmtp_rem.mpi[i].val,
++				      fmtp_loc.mpi[j].val);
++		    }
++		}
++	    }
++	}
++
++	/* Apply the negotiation result */
++	vfd = pjmedia_format_get_video_format_detail(&param->enc_fmt,
++						     PJ_TRUE);
++	vfd->size = size;
++	vfd->fps.num = 30000;
++	vfd->fps.denum = 1001 * mpi;
++    }
++
++    if (param->dir & PJMEDIA_DIR_DECODING) {
++	/* Here we just want to find the highest resolution and the lowest MPI
++	 * we support and set it as the decoder param.
++	 */
++	pjmedia_vid_codec_h263_fmtp fmtp;
++	pjmedia_video_format_detail *vfd;
++	pj_status_t status;
++	
++	status = pjmedia_vid_codec_parse_h263_fmtp(&param->dec_fmtp,
++						   &fmtp);
++	if (status != PJ_SUCCESS)
++	    return status;
++
++	vfd = pjmedia_format_get_video_format_detail(&param->dec_fmt,
++						     PJ_TRUE);
++
++	if (fmtp.mpi_cnt == 0) {
++	    /* No resolution specified, lets just assume 4CIF=1! */
++	    vfd->size.w = 704;
++	    vfd->size.h = 576;
++	    vfd->fps.num = 30000;
++	    vfd->fps.denum = 1001;
++	} else {
++	    unsigned i, max_size = 0, max_size_idx = 0, min_mpi = 32;
++	    
++	    /* Get the largest size and the lowest MPI */
++	    for (i = 0; i < fmtp.mpi_cnt; ++i) {
++		if (fmtp.mpi[i].size.w * fmtp.mpi[i].size.h > max_size) {
++		    max_size = fmtp.mpi[i].size.w * fmtp.mpi[i].size.h;
++		    max_size_idx = i;
++		}
++		if (fmtp.mpi[i].val < min_mpi)
++		    min_mpi = fmtp.mpi[i].val;
++	    }
++
++	    vfd->size = fmtp.mpi[max_size_idx].size;
++	    vfd->fps.num = 30000;
++	    vfd->fps.denum = 1001 * min_mpi;
++	}
++    }
++
++    return PJ_SUCCESS;
++}
++
++
++/* H264 fmtp parser */
++PJ_DEF(pj_status_t) pjmedia_vid_codec_parse_h264_fmtp(
++				    const pjmedia_codec_fmtp *fmtp,
++				    pjmedia_vid_codec_h264_fmtp *h264_fmtp)
++{
++    const pj_str_t PROFILE_LEVEL_ID	= {"profile-level-id", 16};
++    const pj_str_t MAX_MBPS		= {"max-mbps", 8};
++    const pj_str_t MAX_FS		= {"max-fs", 6};
++    const pj_str_t MAX_CPB		= {"max-cpb", 7};
++    const pj_str_t MAX_DPB	    	= {"max-dpb", 7};
++    const pj_str_t MAX_BR		= {"max-br", 6};
++    const pj_str_t PACKETIZATION_MODE	= {"packetization-mode", 18};
++    const pj_str_t SPROP_PARAMETER_SETS = {"sprop-parameter-sets", 20};
++    unsigned i;
++
++    pj_bzero(h264_fmtp, sizeof(*h264_fmtp));
++
++    for (i=0; i<fmtp->cnt; ++i) {
++	unsigned tmp;
++	if (pj_stricmp(&fmtp->param[i].name, &PROFILE_LEVEL_ID)==0) {
++	    pj_str_t endst;
++
++	    if (fmtp->param[i].val.slen != 6)
++		return PJMEDIA_SDP_EINFMTP;
++
++	    tmp = pj_strtoul2(&fmtp->param[i].val, &endst, 16);
++	    if (endst.slen)
++		return PJMEDIA_SDP_EINFMTP;
++
++	    h264_fmtp->profile_idc = (pj_uint8_t)((tmp >> 16) & 0xFF);
++	    h264_fmtp->profile_iop = (pj_uint8_t)((tmp >> 8) & 0xFF);
++	    h264_fmtp->profile_idc = (pj_uint8_t)(tmp & 0xFF);
++	} else if (pj_stricmp(&fmtp->param[i].name, &PACKETIZATION_MODE)==0) {
++	    tmp = pj_strtoul(&fmtp->param[i].val);
++	    if (tmp) h264_fmtp->max_br = tmp;
++	} else if (pj_stricmp(&fmtp->param[i].name, &MAX_MBPS)==0) {
++	    tmp = pj_strtoul(&fmtp->param[i].val);
++	    if (tmp) h264_fmtp->max_mbps = tmp;
++	} else if (pj_stricmp(&fmtp->param[i].name, &MAX_FS)==0) {
++	    tmp = pj_strtoul(&fmtp->param[i].val);
++	    if (tmp) h264_fmtp->max_fs = tmp;
++	} else if (pj_stricmp(&fmtp->param[i].name, &MAX_CPB)==0) {
++	    tmp = pj_strtoul(&fmtp->param[i].val);
++	    if (tmp) h264_fmtp->max_cpb = tmp;
++	} else if (pj_stricmp(&fmtp->param[i].name, &MAX_DPB)==0) {
++	    tmp = pj_strtoul(&fmtp->param[i].val);
++	    if (tmp) h264_fmtp->max_dpb = tmp;
++	} else if (pj_stricmp(&fmtp->param[i].name, &MAX_BR)==0) {
++	    tmp = pj_strtoul(&fmtp->param[i].val);
++	    if (tmp) h264_fmtp->max_br = tmp;
++	} else if (pj_stricmp(&fmtp->param[i].name, &SPROP_PARAMETER_SETS)==0)
++	{
++	    pj_str_t sps_st;
++
++	    sps_st = fmtp->param[i].val;
++	    while (sps_st.slen) {
++		pj_str_t tmp_st;
++		int tmp_len;
++		const pj_uint8_t start_code[3] = {0, 0, 1};
++		char *p;
++		pj_uint8_t *nal;
++		pj_status_t status;
++
++		/* Find field separator ',' */
++		tmp_st = sps_st;
++		p = pj_strchr(&sps_st, ',');
++		if (p) {
++		    tmp_st.slen = p - sps_st.ptr;
++		    sps_st.ptr  = p+1;
++		    sps_st.slen -= (tmp_st.slen+1);
++		} else {
++		    sps_st.slen = 0;
++		}
++
++		/* Decode field and build NAL unit for this param */
++		nal = &h264_fmtp->sprop_param_sets[
++					  h264_fmtp->sprop_param_sets_len];
++		tmp_len = PJ_ARRAY_SIZE(h264_fmtp->sprop_param_sets) -
++			  h264_fmtp->sprop_param_sets_len -
++			  PJ_ARRAY_SIZE(start_code);
++		status = pj_base64_decode(&tmp_st,
++					  nal + PJ_ARRAY_SIZE(start_code),
++					  &tmp_len);
++		if (status != PJ_SUCCESS)
++		    return PJMEDIA_SDP_EINFMTP;
++
++		tmp_len += PJ_ARRAY_SIZE(start_code);
++		pj_memcpy(nal, start_code, PJ_ARRAY_SIZE(start_code));
++		h264_fmtp->sprop_param_sets_len += tmp_len;
++	    }
++	}
++    }
++
++    return PJ_SUCCESS;
++}
+diff --git a/pjmedia/src/pjmedia/vid_stream.c b/pjmedia/src/pjmedia/vid_stream.c
+index 8e6413a..ff7304f 100644
+--- a/pjmedia/src/pjmedia/vid_stream.c
++++ b/pjmedia/src/pjmedia/vid_stream.c
+@@ -768,6 +768,10 @@ static pj_status_t put_frame(pjmedia_port *port,
+     if (status != PJ_SUCCESS) {
+         LOGERR_((channel->port.info.name.ptr, 
+ 	        "Codec encode() error", status));
++
++	/* Update RTP timestamp */
++	pjmedia_rtp_encode_rtp(&channel->rtp, channel->pt, 1, 0,
++			       rtp_ts_len, &rtphdr, &rtphdrlen);
+         return status;
+     }
+ 
+@@ -788,6 +792,10 @@ static pj_status_t put_frame(pjmedia_port *port,
+         if (status != PJ_SUCCESS) {
+             LOGERR_((channel->port.info.name.ptr, 
+ 	            "Codec pack() error", status));
++
++	    /* Update RTP timestamp */
++	    pjmedia_rtp_encode_rtp(&channel->rtp, channel->pt, 1, 0,
++				   rtp_ts_len, &rtphdr, &rtphdrlen);
+             return status;
+         }
+ 
+@@ -866,13 +874,8 @@ static pj_status_t get_frame(pjmedia_port *port,
+      * timestamp are collected (a complete frame unpacketized).
+      */
+     {
+-	pj_uint8_t *p, *data;
+-	char ptype;
+-	pj_size_t psize, data_len;
+-	pj_uint32_t ts;
+-	int seq;
+ 	pj_bool_t got_frame;
+-	unsigned i;
++	unsigned cnt;
+ 
+ 	channel->buf_len = 0;
+ 	got_frame = PJ_FALSE;
+@@ -880,28 +883,24 @@ static pj_status_t get_frame(pjmedia_port *port,
+ 	/* Lock jitter buffer mutex first */
+ 	pj_mutex_lock( stream->jb_mutex );
+ 
+-	for (i=0; ; ++i) {
+-	    /* Get frame from jitter buffer. */
+-	    pjmedia_jbuf_peek_frame(stream->jb, i, (const void**)&p,
+-	                            &psize, &ptype, NULL, &ts, &seq);
++	/* Check if we got a decodable frame */
++	for (cnt=0; ; ++cnt) {
++	    char ptype;
++	    pj_uint32_t ts;
++	    int seq;
++
++	    /* Peek frame from jitter buffer. */
++	    pjmedia_jbuf_peek_frame(stream->jb, cnt, NULL, NULL,
++				    &ptype, NULL, &ts, &seq);
+ 	    if (ptype == PJMEDIA_JB_NORMAL_FRAME) {
+ 		if (last_ts == 0) {
+ 		    last_ts = ts;
+ 		    frm_first_seq = seq;
+ 		}
+-
+ 		if (ts != last_ts) {
+ 		    got_frame = PJ_TRUE;
+-		    pjmedia_jbuf_remove_frame(stream->jb, i);
+ 		    break;
+ 		}
+-
+-		data = (pj_uint8_t*)channel->buf + channel->buf_len;
+-		data_len = channel->buf_size - channel->buf_len;
+-		status = (*stream->codec->op->unpacketize)(stream->codec,
+-							   p, psize,
+-							   data, &data_len);
+-		channel->buf_len += data_len;
+ 		frm_last_seq = seq;
+ 	    } else if (ptype == PJMEDIA_JB_ZERO_EMPTY_FRAME) {
+ 		/* No more packet in the jitter buffer */
+@@ -909,6 +908,44 @@ static pj_status_t get_frame(pjmedia_port *port,
+ 	    }
+ 	}
+ 
++	if (got_frame) {
++	    unsigned i;
++
++	    /* Generate frame bitstream from the payload */
++	    channel->buf_len = 0;
++	    for (i = 0; i < cnt; ++i) {
++		const pj_uint8_t *p;
++		pj_size_t psize;
++		char ptype;
++
++		/* We use jbuf_peek_frame() as it will returns the pointer of
++		 * the payload (no buffer and memcpy needed), just as we need.
++		 */
++		pjmedia_jbuf_peek_frame(stream->jb, i, &p,
++					&psize, &ptype, NULL, NULL, NULL);
++
++		if (ptype != PJMEDIA_JB_NORMAL_FRAME) {
++		    /* Packet lost, must set payload to NULL and keep going */
++		    p = NULL;
++		    psize = 0;
++		}
++
++		status = (*stream->codec->op->unpacketize)(
++						stream->codec,
++						p, psize,
++						(pj_uint8_t*)channel->buf,
++						channel->buf_size,
++						&channel->buf_len);
++		if (status != PJ_SUCCESS) {
++		    LOGERR_((channel->port.info.name.ptr, 
++			    "Codec unpack() error", status));
++		    /* Just ignore this unpack error */
++		}
++	    }
++
++	    pjmedia_jbuf_remove_frame(stream->jb, cnt);
++	}
++
+ 	/* Unlock jitter buffer mutex. */
+ 	pj_mutex_unlock( stream->jb_mutex );
+ 
+diff --git a/pjmedia/src/test/vid_codec_test.c b/pjmedia/src/test/vid_codec_test.c
+index dfff891..9d6bc01 100644
+--- a/pjmedia/src/test/vid_codec_test.c
++++ b/pjmedia/src/test/vid_codec_test.c
+@@ -6,7 +6,8 @@
+ 
+ #define THIS_FILE "vid_codec.c"
+ 
+-#define BYPASS_CODEC 0
++#define BYPASS_CODEC	    0
++#define BYPASS_PACKETIZER   0
+ 
+ typedef struct codec_port_data_t
+ {
+@@ -14,6 +15,8 @@ typedef struct codec_port_data_t
+     pjmedia_port        *dn_port;
+     pj_uint8_t          *enc_buf;
+     pj_size_t            enc_buf_size;
++    pj_uint8_t          *pack_buf;
++    pj_size_t            pack_buf_size;
+ } codec_port_data_t;
+ 
+ static pj_status_t codec_put_frame(pjmedia_port *port,
+@@ -32,6 +35,46 @@ static pj_status_t codec_put_frame(pjmedia_port *port,
+ 
+ 	status = codec->op->encode(codec, frame, enc_frame.size, &enc_frame);
+ 	if (status != PJ_SUCCESS) goto on_error;
++
++#if !BYPASS_PACKETIZER
++	if (enc_frame.size) {
++	    unsigned pos = 0, i = 0;
++	    pj_bool_t packetized = PJ_FALSE;
++	    unsigned unpack_pos = 0;
++	    
++	    while (pos < enc_frame.size) {
++		pj_uint8_t *payload;
++		pj_size_t payload_len;
++
++		status = codec->op->packetize(codec, 
++					      (pj_uint8_t*)enc_frame.buf,
++					      enc_frame.size, &pos,
++					      &payload, &payload_len);
++		if (status == PJ_ENOTSUP)
++		    break;
++		if (status != PJ_SUCCESS)
++		    goto on_error;
++
++		status = codec->op->unpacketize(codec, payload, payload_len,
++						port_data->pack_buf,
++						port_data->pack_buf_size,
++						&unpack_pos);
++		if (status != PJ_SUCCESS)
++		    goto on_error;
++
++		// what happen if the bitstream is broken?
++		//if (i++ != 1) unpack_pos -= 10;
++
++		packetized = PJ_TRUE;
++	    }
++
++	    if (packetized) {
++		enc_frame.buf  = port_data->pack_buf;
++		enc_frame.size = unpack_pos;
++	    }
++	}
++#endif
++
+ 	status = codec->op->decode(codec, &enc_frame, frame->size, frame);
+ 	if (status != PJ_SUCCESS) goto on_error;
+     }
+@@ -77,7 +120,7 @@ static int enum_codecs()
+         return 100;
+ 
+     for (i = 0; i < cnt; ++i) {
+-        PJ_LOG(3, (THIS_FILE, "  %16.*s %c%c %s",
++        PJ_LOG(3, (THIS_FILE, "  %-16.*s %c%c %s",
+                    info[i].encoding_name.slen, info[i].encoding_name.ptr,
+                    (info[i].dir & PJMEDIA_DIR_ENCODING? 'E' : ' '),
+                    (info[i].dir & PJMEDIA_DIR_DECODING? 'D' : ' '),
+@@ -122,6 +165,7 @@ static int encode_decode_test(pj_pool_t *pool, const char *codec_id,
+         }
+     }
+ 
++
+     /* Lookup colorbar source */
+     status = pjmedia_vid_dev_lookup("Colorbar", "Colorbar generator", &cap_idx);
+     if (status != PJ_SUCCESS) {
+@@ -134,6 +178,11 @@ static int encode_decode_test(pj_pool_t *pool, const char *codec_id,
+ 	rc = 207; goto on_return;
+     }
+ 
++    raw_fmt_id = codec_info->dec_fmt_id[0];
++    cap_idx = 0; /* Use dshow capture */
++
++#if 0
++    // Now, the video port can do automatic conversion.
+     /* Raw format ID "not specified", lets find common format among the codec
+      * and the video devices
+      */
+@@ -165,6 +214,7 @@ static int encode_decode_test(pj_pool_t *pool, const char *codec_id,
+             goto on_return;
+         }
+     }
++#endif
+ 
+     /* Prepare codec */
+     {
+@@ -264,6 +314,9 @@ static int encode_decode_test(pj_pool_t *pool, const char *codec_id,
+ 				   codec_param.dec_fmt.det.vid.size.h * 4;
+     codec_port_data.enc_buf = pj_pool_alloc(pool, 
+ 					    codec_port_data.enc_buf_size);
++    codec_port_data.pack_buf_size = codec_port_data.enc_buf_size;
++    codec_port_data.pack_buf = pj_pool_alloc(pool, 
++					     codec_port_data.pack_buf_size);
+ 
+     codec_port.put_frame = &codec_put_frame;
+     codec_port.port_data.pdata = &codec_port_data;

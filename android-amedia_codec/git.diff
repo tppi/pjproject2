@@ -1,0 +1,7 @@
+git checkout 940e3c0443eaba160cc499193f5930f11434c595
+
+git diff HEAD~ HEAD > Android-AMediaCodec.patch
+
+git diff HEAD~ HEAD --name-only > Android-AMediaCodec.1
+
+git diff HEAD~ HEAD --name-only | xargs zip update.zip

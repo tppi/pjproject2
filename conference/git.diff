@@ -1,0 +1,7 @@
+git checkout f04ffdddbb02b9d3e0ec000c20c76eddfbed55b9
+
+git diff HEAD~ HEAD > conference.patch
+
+git diff HEAD~ HEAD --name-only > conference.1
+
+git diff HEAD~ HEAD --name-only | xargs zip update.zip

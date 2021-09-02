@@ -1,0 +1,9 @@
+commit 3c9fa7ae2dd7ab1a8a9456bb225b40146ef25094
+Author: Sauw Ming <ming@teluu.com>
+Date:   Fri Nov 22 06:18:55 2019 +0000
+
+    Fixed #2253: Support for VP8 and VP9 video codec
+    
+    
+    
+    git-svn-id: https://svn.pjsip.org/repos/pjproject/trunk@6110 74dad513-b988-da41-8d7b-12977e46ad98

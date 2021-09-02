@@ -1,0 +1,5 @@
+commit b5ab265a3c7445035ff5838d3ca4600fced77556
+Author: Nanang Izzuddin <nanang@teluu.com>
+Date:   Tue Mar 17 04:02:44 2015 +0000
+
+    Re #1822: Initial implementation of Android video capturer. 

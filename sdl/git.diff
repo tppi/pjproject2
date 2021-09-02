@@ -1,0 +1,12 @@
+git checkout 31c44e9511e57c12e0a3820d468bbf21368c9498
+
+git diff HEAD~ HEAD > sdl.patch
+
+git diff HEAD~ HEAD --name-only > sdl.1
+
+git diff HEAD~ HEAD --name-only | xargs zip update.zip
+
+
+
+
+

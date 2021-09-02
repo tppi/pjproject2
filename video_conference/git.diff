@@ -1,0 +1,7 @@
+git checkout eafc04d5bfa946943f6169e888160cb42c976eac
+
+git diff HEAD~ HEAD > video_conference.patch
+
+git diff HEAD~ HEAD --name-only > video_conference.1
+
+git diff HEAD~ HEAD --name-only | xargs zip update.zip

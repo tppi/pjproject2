@@ -1,0 +1,7 @@
+git checkout 0046373595957a642fddaa0ef86357df2a714634
+
+git diff HEAD~ HEAD > webrtc_aec3.patch
+
+git diff HEAD~ HEAD --name-only > webrtc_aec3.1
+
+git diff HEAD~ HEAD --name-only | xargs zip update.zip

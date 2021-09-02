@@ -1,0 +1,11 @@
+commit bfb34064bcd79830fcd0bbe01de736b795c2f4a7
+Author: Riza Sulistyo <riza@teluu.com>
+Date:   Wed Jul 1 02:20:12 2015 +0000
+
+    Re #1863: Initial implementation of PJSUA2 Video Codec API and Video Device API.
+    - Codec management (enum codec, set prio, get param, set param)
+    - Device management (enum dev, dev count, dev info).
+    
+    
+    
+    git-svn-id: https://svn.pjsip.org/repos/pjproject/trunk@5123 74dad513-b988-da41-8d7b-12977e46ad98

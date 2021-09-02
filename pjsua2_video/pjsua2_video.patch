@@ -1,0 +1,567 @@
+diff --git a/pjsip-apps/src/swig/pjsua2.i b/pjsip-apps/src/swig/pjsua2.i
+index 44209b0..2f40ad6 100644
+--- a/pjsip-apps/src/swig/pjsua2.i
++++ b/pjsip-apps/src/swig/pjsua2.i
+@@ -101,6 +101,7 @@ using namespace pj;
+ %template(MediaFormatVector)		std::vector<pj::MediaFormat*>;
+ %template(AudioDevInfoVector)		std::vector<pj::AudioDevInfo*>;
+ %template(CodecInfoVector)		std::vector<pj::CodecInfo*>;
++%template(VideoDevInfoVector)		std::vector<pj::VideoDevInfo*>;
+ 
+ /* pj::WindowHandle::setWindow() receives Surface object */
+ #if defined(SWIGJAVA) && defined(__ANDROID__)
+diff --git a/pjsip-apps/src/swig/symbols.i b/pjsip-apps/src/swig/symbols.i
+index ead4c85..7f32ff7 100644
+--- a/pjsip-apps/src/swig/symbols.i
++++ b/pjsip-apps/src/swig/symbols.i
+@@ -48,6 +48,8 @@ typedef pj_int32_t pjmedia_vid_dev_index;
+ 
+ enum pjmedia_vid_dev_std_index {PJMEDIA_VID_DEFAULT_CAPTURE_DEV = -1, PJMEDIA_VID_DEFAULT_RENDER_DEV = -2, PJMEDIA_VID_INVALID_DEV = -3};
+ 
++typedef enum pjmedia_vid_dev_cap {PJMEDIA_VID_DEV_CAP_FORMAT = 1, PJMEDIA_VID_DEV_CAP_INPUT_SCALE = 2, PJMEDIA_VID_DEV_CAP_OUTPUT_WINDOW = 4, PJMEDIA_VID_DEV_CAP_OUTPUT_RESIZE = 8, PJMEDIA_VID_DEV_CAP_OUTPUT_POSITION = 16, PJMEDIA_VID_DEV_CAP_OUTPUT_HIDE = 32, PJMEDIA_VID_DEV_CAP_INPUT_PREVIEW = 64, PJMEDIA_VID_DEV_CAP_ORIENTATION = 128, PJMEDIA_VID_DEV_CAP_SWITCH = 256, PJMEDIA_VID_DEV_CAP_OUTPUT_WINDOW_FLAGS = 512, PJMEDIA_VID_DEV_CAP_MAX = 16384} pjmedia_vid_dev_cap;
++
+ typedef enum pjmedia_aud_dev_route {PJMEDIA_AUD_DEV_ROUTE_DEFAULT = 0, PJMEDIA_AUD_DEV_ROUTE_LOUDSPEAKER = 1, PJMEDIA_AUD_DEV_ROUTE_EARPIECE = 2, PJMEDIA_AUD_DEV_ROUTE_BLUETOOTH = 4} pjmedia_aud_dev_route;
+ 
+ typedef enum pjmedia_aud_dev_cap {PJMEDIA_AUD_DEV_CAP_EXT_FORMAT = 1, PJMEDIA_AUD_DEV_CAP_INPUT_LATENCY = 2, PJMEDIA_AUD_DEV_CAP_OUTPUT_LATENCY = 4, PJMEDIA_AUD_DEV_CAP_INPUT_VOLUME_SETTING = 8, PJMEDIA_AUD_DEV_CAP_OUTPUT_VOLUME_SETTING = 16, PJMEDIA_AUD_DEV_CAP_INPUT_SIGNAL_METER = 32, PJMEDIA_AUD_DEV_CAP_OUTPUT_SIGNAL_METER = 64, PJMEDIA_AUD_DEV_CAP_INPUT_ROUTE = 128, PJMEDIA_AUD_DEV_CAP_OUTPUT_ROUTE = 256, PJMEDIA_AUD_DEV_CAP_EC = 512, PJMEDIA_AUD_DEV_CAP_EC_TAIL = 1024, PJMEDIA_AUD_DEV_CAP_VAD = 2048, PJMEDIA_AUD_DEV_CAP_CNG = 4096, PJMEDIA_AUD_DEV_CAP_PLC = 8192, PJMEDIA_AUD_DEV_CAP_MAX = 16384} pjmedia_aud_dev_cap;
+@@ -91,7 +93,7 @@ typedef enum pjmedia_dir {PJMEDIA_DIR_NONE = 0, PJMEDIA_DIR_ENCODING = 1, PJMEDI
+ 
+ typedef enum pjmedia_tp_proto {PJMEDIA_TP_PROTO_NONE = 0, PJMEDIA_TP_PROTO_RTP_AVP, PJMEDIA_TP_PROTO_RTP_SAVP, PJMEDIA_TP_PROTO_UNKNOWN} pjmedia_tp_proto;
+ 
+-typedef enum pjmedia_format_id {PJMEDIA_FORMAT_L16 = 0, PJMEDIA_FORMAT_PCM = PJMEDIA_FORMAT_L16, PJMEDIA_FORMAT_PCMA = ((('W' << 24) | ('A' << 16)) | ('L' << 8)) | 'A', PJMEDIA_FORMAT_ALAW = PJMEDIA_FORMAT_PCMA, PJMEDIA_FORMAT_PCMU = ((('W' << 24) | ('A' << 16)) | ('L' << 8)) | 'u', PJMEDIA_FORMAT_ULAW = PJMEDIA_FORMAT_PCMU, PJMEDIA_FORMAT_AMR = ((('R' << 24) | ('M' << 16)) | ('A' << 8)) | ' ', PJMEDIA_FORMAT_G729 = ((('9' << 24) | ('2' << 16)) | ('7' << 8)) | 'G', PJMEDIA_FORMAT_ILBC = ((('C' << 24) | ('B' << 16)) | ('L' << 8)) | 'I', PJMEDIA_FORMAT_RGB24 = ((('3' << 24) | ('B' << 16)) | ('G' << 8)) | 'R', PJMEDIA_FORMAT_RGBA = ((('A' << 24) | ('B' << 16)) | ('G' << 8)) | 'R', PJMEDIA_FORMAT_BGRA = ((('A' << 24) | ('R' << 16)) | ('G' << 8)) | 'B', PJMEDIA_FORMAT_RGB32 = PJMEDIA_FORMAT_RGBA, PJMEDIA_FORMAT_DIB = (((' ' << 24) | ('B' << 16)) | ('I' << 8)) | 'D', PJMEDIA_FORMAT_GBRP = ((('P' << 24) | ('R' << 16)) | ('B' << 8)) | 'G', PJMEDIA_FORMAT_AYUV = ((('V' << 24) | ('U' << 16)) | ('Y' << 8)) | 'A', PJMEDIA_FORMAT_YUY2 = ((('2' << 24) | ('Y' << 16)) | ('U' << 8)) | 'Y', PJMEDIA_FORMAT_UYVY = ((('Y' << 24) | ('V' << 16)) | ('Y' << 8)) | 'U', PJMEDIA_FORMAT_YVYU = ((('U' << 24) | ('Y' << 16)) | ('V' << 8)) | 'Y', PJMEDIA_FORMAT_I420 = ((('0' << 24) | ('2' << 16)) | ('4' << 8)) | 'I', PJMEDIA_FORMAT_IYUV = PJMEDIA_FORMAT_I420, PJMEDIA_FORMAT_YV12 = ((('2' << 24) | ('1' << 16)) | ('V' << 8)) | 'Y', PJMEDIA_FORMAT_I422 = ((('2' << 24) | ('2' << 16)) | ('4' << 8)) | 'I', PJMEDIA_FORMAT_I420JPEG = ((('0' << 24) | ('2' << 16)) | ('4' << 8)) | 'J', PJMEDIA_FORMAT_I422JPEG = ((('2' << 24) | ('2' << 16)) | ('4' << 8)) | 'J', PJMEDIA_FORMAT_H261 = ((('1' << 24) | ('6' << 16)) | ('2' << 8)) | 'H', PJMEDIA_FORMAT_H263 = ((('3' << 24) | ('6' << 16)) | ('2' << 8)) | 'H', PJMEDIA_FORMAT_H263P = ((('3' << 24) | ('6' << 16)) | ('2' << 8)) | 'P', PJMEDIA_FORMAT_H264 = ((('4' << 24) | ('6' << 16)) | ('2' << 8)) | 'H', PJMEDIA_FORMAT_MJPEG = ((('G' << 24) | ('P' << 16)) | ('J' << 8)) | 'M', PJMEDIA_FORMAT_MPEG1VIDEO = ((('V' << 24) | ('1' << 16)) | ('P' << 8)) | 'M', PJMEDIA_FORMAT_MPEG2VIDEO = ((('V' << 24) | ('2' << 16)) | ('P' << 8)) | 'M', PJMEDIA_FORMAT_MPEG4 = ((('4' << 24) | ('G' << 16)) | ('P' << 8)) | 'M'} pjmedia_format_id;
++typedef enum pjmedia_format_id {PJMEDIA_FORMAT_L16 = 0, PJMEDIA_FORMAT_PCM = PJMEDIA_FORMAT_L16, PJMEDIA_FORMAT_PCMA = ((('W' << 24) | ('A' << 16)) | ('L' << 8)) | 'A', PJMEDIA_FORMAT_ALAW = PJMEDIA_FORMAT_PCMA, PJMEDIA_FORMAT_PCMU = ((('W' << 24) | ('A' << 16)) | ('L' << 8)) | 'u', PJMEDIA_FORMAT_ULAW = PJMEDIA_FORMAT_PCMU, PJMEDIA_FORMAT_AMR = ((('R' << 24) | ('M' << 16)) | ('A' << 8)) | ' ', PJMEDIA_FORMAT_G729 = ((('9' << 24) | ('2' << 16)) | ('7' << 8)) | 'G', PJMEDIA_FORMAT_ILBC = ((('C' << 24) | ('B' << 16)) | ('L' << 8)) | 'I', PJMEDIA_FORMAT_RGB24 = ((('3' << 24) | ('B' << 16)) | ('G' << 8)) | 'R', PJMEDIA_FORMAT_RGBA = ((('A' << 24) | ('B' << 16)) | ('G' << 8)) | 'R', PJMEDIA_FORMAT_BGRA = ((('A' << 24) | ('R' << 16)) | ('G' << 8)) | 'B', PJMEDIA_FORMAT_RGB32 = PJMEDIA_FORMAT_RGBA, PJMEDIA_FORMAT_DIB = (((' ' << 24) | ('B' << 16)) | ('I' << 8)) | 'D', PJMEDIA_FORMAT_GBRP = ((('P' << 24) | ('R' << 16)) | ('B' << 8)) | 'G', PJMEDIA_FORMAT_AYUV = ((('V' << 24) | ('U' << 16)) | ('Y' << 8)) | 'A', PJMEDIA_FORMAT_YUY2 = ((('2' << 24) | ('Y' << 16)) | ('U' << 8)) | 'Y', PJMEDIA_FORMAT_UYVY = ((('Y' << 24) | ('V' << 16)) | ('Y' << 8)) | 'U', PJMEDIA_FORMAT_YVYU = ((('U' << 24) | ('Y' << 16)) | ('V' << 8)) | 'Y', PJMEDIA_FORMAT_I420 = ((('0' << 24) | ('2' << 16)) | ('4' << 8)) | 'I', PJMEDIA_FORMAT_IYUV = PJMEDIA_FORMAT_I420, PJMEDIA_FORMAT_YV12 = ((('2' << 24) | ('1' << 16)) | ('V' << 8)) | 'Y', PJMEDIA_FORMAT_NV21 = ((('1' << 24) | ('2' << 16)) | ('V' << 8)) | 'N', PJMEDIA_FORMAT_I422 = ((('2' << 24) | ('2' << 16)) | ('4' << 8)) | 'I', PJMEDIA_FORMAT_I420JPEG = ((('0' << 24) | ('2' << 16)) | ('4' << 8)) | 'J', PJMEDIA_FORMAT_I422JPEG = ((('2' << 24) | ('2' << 16)) | ('4' << 8)) | 'J', PJMEDIA_FORMAT_H261 = ((('1' << 24) | ('6' << 16)) | ('2' << 8)) | 'H', PJMEDIA_FORMAT_H263 = ((('3' << 24) | ('6' << 16)) | ('2' << 8)) | 'H', PJMEDIA_FORMAT_H263P = ((('3' << 24) | ('6' << 16)) | ('2' << 8)) | 'P', PJMEDIA_FORMAT_H264 = ((('4' << 24) | ('6' << 16)) | ('2' << 8)) | 'H', PJMEDIA_FORMAT_MJPEG = ((('G' << 24) | ('P' << 16)) | ('J' << 8)) | 'M', PJMEDIA_FORMAT_MPEG1VIDEO = ((('V' << 24) | ('1' << 16)) | ('P' << 8)) | 'M', PJMEDIA_FORMAT_MPEG2VIDEO = ((('V' << 24) | ('2' << 16)) | ('P' << 8)) | 'M', PJMEDIA_FORMAT_MPEG4 = ((('4' << 24) | ('G' << 16)) | ('P' << 8)) | 'M'} pjmedia_format_id;
+ 
+ typedef enum pjsip_cred_data_type {PJSIP_CRED_DATA_PLAIN_PASSWD = 0, PJSIP_CRED_DATA_DIGEST = 1, PJSIP_CRED_DATA_EXT_AKA = 16} pjsip_cred_data_type;
+ 
+@@ -155,7 +157,7 @@ typedef enum pjsua_call_vid_strm_op {PJSUA_CALL_VID_STRM_NO_OP, PJSUA_CALL_VID_S
+ 
+ typedef enum pjsua_vid_req_keyframe_method {PJSUA_VID_REQ_KEYFRAME_SIP_INFO = 1, PJSUA_VID_REQ_KEYFRAME_RTCP_PLI = 2} pjsua_vid_req_keyframe_method;
+ 
+-typedef enum pjsua_call_flag {PJSUA_CALL_UNHOLD = 1, PJSUA_CALL_UPDATE_CONTACT = 2, PJSUA_CALL_INCLUDE_DISABLED_MEDIA = 4} pjsua_call_flag;
++typedef enum pjsua_call_flag {PJSUA_CALL_UNHOLD = 1, PJSUA_CALL_UPDATE_CONTACT = 2, PJSUA_CALL_INCLUDE_DISABLED_MEDIA = 4, PJSUA_CALL_NO_SDP_OFFER = 8} pjsua_call_flag;
+ 
+ typedef enum pjsua_create_media_transport_flag {PJSUA_MED_TP_CLOSE_MEMBER = 1} pjsua_create_media_transport_flag;
+ 
+diff --git a/pjsip-apps/src/swig/symbols.lst b/pjsip-apps/src/swig/symbols.lst
+index 3e1dbdc..a3e5eae 100644
+--- a/pjsip-apps/src/swig/symbols.lst
++++ b/pjsip-apps/src/swig/symbols.lst
+@@ -10,7 +10,7 @@ pjnath/turn_session.h          	pj_turn_tp_type
+ pjmedia/event.h                 pjmedia_event_type
+ pjmedia/transport_srtp.h	pjmedia_srtp_use
+ pjmedia/vid_stream.h		pjmedia_vid_stream_rc_method
+-pjmedia-videodev/videodev.h	pjmedia_vid_dev_index pjmedia_vid_dev_std_index
++pjmedia-videodev/videodev.h	pjmedia_vid_dev_index pjmedia_vid_dev_std_index pjmedia_vid_dev_cap
+ pjmedia-audiodev/audiodev.h 	pjmedia_aud_dev_route pjmedia_aud_dev_cap
+ pjmedia/wav_port.h              pjmedia_file_writer_option pjmedia_file_player_option
+ pjmedia/tonegen.h		pjmedia_tone_digit pjmedia_tone_digit_map pjmedia_tone_desc
+diff --git a/pjsip/include/pjsua2/endpoint.hpp b/pjsip/include/pjsua2/endpoint.hpp
+index 0001da1..7d71231 100644
+--- a/pjsip/include/pjsua2/endpoint.hpp
++++ b/pjsip/include/pjsua2/endpoint.hpp
+@@ -1069,6 +1069,13 @@ public:
+      */
+     AudDevManager &audDevManager();
+ 
++    /**
++     * Get the instance of Video Device Manager.
++     *
++     * @return		The Video Device Manager.
++     */
++    VidDevManager &vidDevManager();
++
+     /*************************************************************************
+      * Codec management operations
+      */
+@@ -1095,10 +1102,10 @@ public:
+     /**
+      * Get codec parameters.
+      *
+-     * @param codec_id		Codec ID.
++     * @param codec_id	Codec ID.
+      *
+-     * @return			Codec parameters. If codec is not found, Error
+-     * 				will be thrown.
++     * @return		Codec parameters. If codec is not found, Error
++     * 			will be thrown.
+      *
+      */
+     CodecParam codecGetParam(const string &codec_id) const throw(Error);
+@@ -1114,6 +1121,47 @@ public:
+     void codecSetParam(const string &codec_id,
+ 		       const CodecParam param) throw(Error);
+ 
++    /**
++     * Enum all supported video codecs in the system.
++     *  
++     * @return		Array of video codec info.
++     */
++    const CodecInfoVector &videoCodecEnum() throw(Error);
++
++    /**
++     * Change video codec priority.
++     *
++     * @param codec_id	Codec ID, which is a string that uniquely identify
++     *			the codec (such as "H263/90000"). Please see pjsua
++     *			manual or pjmedia codec reference for details.
++     * @param priority	Codec priority, 0-255, where zero means to disable
++     *			the codec.
++     *
++     */
++    void videoCodecSetPriority(const string &codec_id,
++			       pj_uint8_t priority) throw(Error);
++
++    /**
++     * Get video codec parameters.
++     *
++     * @param codec_id	Codec ID.
++     *
++     * @return		Codec parameters. If codec is not found, Error 
++     *			will be thrown.
++     *
++     */
++    CodecParam videoCodecGetParam(const string &codec_id) const throw(Error);
++
++    /**
++     * Set video codec parameters.
++     *
++     * @param codec_id	Codec ID.
++     * @param param	Codec parameter to set. Set to NULL to reset
++     *			codec parameter to library default settings.
++     *
++     */
++    void videoCodecSetParam(const string &codec_id,
++			    const CodecParam param) throw(Error);
+ 
+ public:
+     /*
+@@ -1182,7 +1230,9 @@ private:
+     LogWriter			*writer;	// Custom writer, if any
+     AudioMediaVector 	 	 mediaList;
+     AudDevManager		 audioDevMgr;
++    VidDevManager		 videoDevMgr;
+     CodecInfoVector		 codecInfoList;
++    CodecInfoVector		 videoCodecInfoList;
+     std::map<pj_thread_t*, pj_thread_desc*> threadDescMap;
+ 
+     /* Pending logging */
+@@ -1316,7 +1366,9 @@ private:
+                               unsigned flags);
+ 
+ private:
+-    void clearCodecInfoList();
++    void clearCodecInfoList(CodecInfoVector &codec_list);
++    void updateCodecInfoList(pjsua_codec_info pj_codec[], unsigned count,
++			     CodecInfoVector &codec_list);
+ 
+ };
+ 
+diff --git a/pjsip/include/pjsua2/media.hpp b/pjsip/include/pjsua2/media.hpp
+index 16df4ca..c3bf6e2 100644
+--- a/pjsip/include/pjsua2/media.hpp
++++ b/pjsip/include/pjsua2/media.hpp
+@@ -89,12 +89,22 @@ struct MediaFormatAudio : public MediaFormat
+  */
+ struct MediaFormatVideo : public MediaFormat
+ {
+-    unsigned		width;	    /**< Video width. 	*/
+-    unsigned		height;	    /**< Video height. 	*/
++    unsigned		width;	    /**< Video width. 			*/
++    unsigned		height;	    /**< Video height.			*/
+     int			fpsNum;	    /**< Frames per second numerator.	*/
+     int			fpsDenum;   /**< Frames per second denumerator.	*/
+     pj_uint32_t		avgBps;	    /**< Average bitrate.		*/
+     pj_uint32_t		maxBps;	    /**< Maximum bitrate.		*/
++
++    /**
++     * Construct from pjmedia_format.
++     */
++    void fromPj(const pjmedia_format &format);
++
++    /**
++     * Export to pjmedia_format.
++     */
++    pjmedia_format toPj() const;
+ };
+ 
+ /** Array of MediaFormat */
+@@ -1587,6 +1597,101 @@ private:
+     pjmedia_vid_dev_index devId;
+ };
+ 
++/**
++ * Video device information structure.
++ */
++struct VideoDevInfo
++{
++    /**
++     * The device name
++     */
++    string name;
++
++    /**
++     * The underlying driver name
++     */
++    string driver;
++
++    /**
++     * The supported direction of the video device, i.e. whether it supports
++     * capture only, render only, or both.
++     */
++    pjmedia_dir dir;
++
++    /** 
++     * Device capabilities, as bitmask combination of #pjmedia_vid_dev_cap 
++     */
++    unsigned caps;
++
++    /**
++     * Array of supported video formats. Some fields in each supported video
++     * format may be set to zero or of "unknown" value, to indicate that the
++     * value is unknown or should be ignored. When these value are not set
++     * to zero, it indicates that the exact format combination is being used.
++     */
++    MediaFormatVector fmt;
++
++    /**
++     * Construct from pjmedia_vid_dev_info.
++     */
++    void fromPj(const pjmedia_vid_dev_info &dev_info);
++
++    /**
++     * Destructor.
++     */
++    ~VideoDevInfo();
++};
++
++/** Array of video device info */
++typedef std::vector<VideoDevInfo*> VideoDevInfoVector;
++
++/**
++ * Video device manager.
++ */
++class VidDevManager {
++public:
++    /**
++     * Get the number of video devices installed in the system.
++     *
++     * @return		The number of devices.
++     */
++    unsigned getDevCount();
++
++    /**
++     * Retrieve the video device info for the specified device index.     
++     *
++     * @param dev_id	The video device id
++     * 
++     * @return		The list of video device info
++     */
++    VideoDevInfo getDevInfo(int dev_id) const throw(Error);
++
++    /**
++     * Enum all video devices installed in the system.
++     *
++     * @return		The list of video device info
++     */
++    const VideoDevInfoVector &enumDev() throw(Error);
++
++private:
++    VideoDevInfoVector videoDevList;
++
++    void clearVideoDevList();
++
++    /**
++     * Constructor.
++     */
++    VidDevManager();
++
++    /**
++     * Destructor.
++     */
++    ~VidDevManager();
++
++    friend class Endpoint;
++};
++
++
+ /*************************************************************************
+ * Codec management
+ */
+diff --git a/pjsip/src/pjsua2/endpoint.cpp b/pjsip/src/pjsua2/endpoint.cpp
+index d06b200..6b8ab94 100644
+--- a/pjsip/src/pjsua2/endpoint.cpp
++++ b/pjsip/src/pjsua2/endpoint.cpp
+@@ -387,7 +387,8 @@ Endpoint::~Endpoint()
+ 	delete cur_media; /* this will remove itself from the list */
+     }
+ 
+-    clearCodecInfoList();
++    clearCodecInfoList(codecInfoList);
++    clearCodecInfoList(videoCodecInfoList);
+ 
+     try {
+ 	libDestroy();
+@@ -1618,6 +1619,11 @@ AudDevManager &Endpoint::audDevManager()
+     return audioDevMgr;
+ }
+ 
++VidDevManager &Endpoint::vidDevManager()
++{
++    return videoDevMgr;
++}
++
+ /*
+  * Codec operations.
+  */
+@@ -1628,15 +1634,7 @@ const CodecInfoVector &Endpoint::codecEnum() throw(Error)
+ 
+     PJSUA2_CHECK_EXPR( pjsua_enum_codecs(pj_codec, &count) );
+ 
+-    pj_enter_critical_section();
+-    clearCodecInfoList();
+-    for (unsigned i=0; i<count; ++i) {
+-	CodecInfo *codec_info = new CodecInfo;
+-
+-	codec_info->fromPj(pj_codec[i]);
+-	codecInfoList.push_back(codec_info);
+-    }
+-    pj_leave_critical_section();
++    updateCodecInfoList(pj_codec, count, codecInfoList);
+     return codecInfoList;
+ }
+ 
+@@ -1666,10 +1664,70 @@ void Endpoint::codecSetParam(const string &codec_id,
+     PJSUA2_CHECK_EXPR( pjsua_codec_set_param(&codec_str, pj_param) );
+ }
+ 
+-void Endpoint::clearCodecInfoList()
++void Endpoint::clearCodecInfoList(CodecInfoVector &codec_list)
++{
++    for (unsigned i=0;i<codec_list.size();++i) {
++	delete codec_list[i];
++    }
++    codec_list.clear();
++}
++
++void Endpoint::updateCodecInfoList(pjsua_codec_info pj_codec[], unsigned count,
++				   CodecInfoVector &codec_list)
+ {
+-    for (unsigned i=0;i<codecInfoList.size();++i) {
+-	delete codecInfoList[i];
++    pj_enter_critical_section();
++    clearCodecInfoList(codec_list);
++    for (unsigned i = 0; i<count; ++i) {
++	CodecInfo *codec_info = new CodecInfo;
++
++	codec_info->fromPj(pj_codec[i]);
++	codecInfoList.push_back(codec_info);
+     }
+-    codecInfoList.clear();
++    pj_leave_critical_section();
++}
++
++const CodecInfoVector &Endpoint::videoCodecEnum() throw(Error)
++{
++#if PJSUA_HAS_VIDEO
++    pjsua_codec_info pj_codec[MAX_CODEC_NUM];
++    unsigned count = MAX_CODEC_NUM;
++
++    PJSUA2_CHECK_EXPR(pjsua_vid_enum_codecs(pj_codec, &count));
++
++    updateCodecInfoList(pj_codec, count, videoCodecInfoList);
++#endif
++    return codecInfoList;
++}
++
++void Endpoint::videoCodecSetPriority(const string &codec_id,
++				     pj_uint8_t priority) throw(Error)
++{
++#if PJSUA_HAS_VIDEO
++    pj_str_t codec_str = str2Pj(codec_id);
++    PJSUA2_CHECK_EXPR(pjsua_vid_codec_set_priority(&codec_str, priority));
++#endif
++}
++
++CodecParam Endpoint::videoCodecGetParam(const string &codec_id) const
++	   throw(Error)
++{
++    pjmedia_vid_codec_param *pj_param = NULL;
++#if PJSUA_HAS_VIDEO
++    pj_str_t codec_str = str2Pj(codec_id);
++
++    PJSUA2_CHECK_EXPR(pjsua_vid_codec_get_param(&codec_str, pj_param));
++#endif
++    return pj_param;
++}
++
++void Endpoint::videoCodecSetParam(const string &codec_id,
++				  const CodecParam param) throw(Error)
++{
++#if PJSUA_HAS_VIDEO
++    pj_str_t codec_str = str2Pj(codec_id);
++    pjmedia_vid_codec_param *pj_param = (pjmedia_vid_codec_param*)param;
++
++    PJSUA2_CHECK_EXPR(pjsua_vid_codec_set_param(&codec_str, pj_param));
++#endif
+ }
++
+diff --git a/pjsip/src/pjsua2/media.cpp b/pjsip/src/pjsua2/media.cpp
+index 12e67f5..46c60a4 100644
+--- a/pjsip/src/pjsua2/media.cpp
++++ b/pjsip/src/pjsua2/media.cpp
+@@ -1094,7 +1094,6 @@ void VideoWindow::setWindow(const VideoWindowHandle &win) throw(Error)
+ #endif
+ }
+ ///////////////////////////////////////////////////////////////////////////////
+-
+ VideoPreviewOpParam::VideoPreviewOpParam()
+ {
+ #if PJSUA_HAS_VIDEO
+@@ -1177,6 +1176,148 @@ VideoWindow VideoPreview::getVideoWindow()
+ }
+ 
+ ///////////////////////////////////////////////////////////////////////////////
++void MediaFormatVideo::fromPj(const pjmedia_format &format)
++{
++#if PJSUA_HAS_VIDEO
++    if ((format.type != PJMEDIA_TYPE_VIDEO) &&
++	(format.detail_type != PJMEDIA_FORMAT_DETAIL_VIDEO))
++    {
++	type = PJMEDIA_TYPE_UNKNOWN;
++	return;
++    }
++
++    id = format.id;
++    type = format.type;
++
++    /* Detail. */
++    width = format.det.vid.size.w;
++    height = format.det.vid.size.h;
++    fpsNum = format.det.vid.fps.num;
++    fpsDenum = format.det.vid.fps.denum;
++    avgBps = format.det.vid.avg_bps;
++    maxBps = format.det.vid.max_bps;
++#else
++    type = PJMEDIA_TYPE_UNKNOWN;
++#endif
++}
++
++pjmedia_format MediaFormatVideo::toPj() const
++{
++    pjmedia_format pj_format;
++
++#if PJSUA_HAS_VIDEO
++    pj_format.id = id;
++    pj_format.type = type;
++
++    pj_format.detail_type = PJMEDIA_FORMAT_DETAIL_VIDEO;
++    pj_format.det.vid.size.w = width;
++    pj_format.det.vid.size.h = height;
++    pj_format.det.vid.fps.num = fpsNum;
++    pj_format.det.vid.fps.denum = fpsDenum;
++    pj_format.det.vid.avg_bps = avgBps;
++    pj_format.det.vid.max_bps = maxBps;
++#else
++    pj_format.type = PJMEDIA_TYPE_UNKNOWN;
++#endif
++    return pj_format;
++}
++
++///////////////////////////////////////////////////////////////////////////////
++void VideoDevInfo::fromPj(const pjmedia_vid_dev_info &dev_info)
++{
++#if PJSUA_HAS_VIDEO
++    name = dev_info.name;
++    driver = dev_info.driver;
++    dir = dev_info.dir;
++    caps = dev_info.caps;
++
++    for (unsigned i = 0; i<dev_info.fmt_cnt;++i) {
++	MediaFormatVideo *format = new MediaFormatVideo;
++
++	format->fromPj(dev_info.fmt[i]);
++	if (format->type == PJMEDIA_TYPE_VIDEO)
++	    fmt.push_back(format);
++    }
++#else
++    PJ_UNUSED_ARG(dev_info);
++#endif
++}
++
++VideoDevInfo::~VideoDevInfo()
++{
++#if PJSUA_HAS_VIDEO
++    for (unsigned i = 0;i<fmt.size();++i) {
++	delete fmt[i];
++    }
++    fmt.clear();
++#endif
++}
++
++///////////////////////////////////////////////////////////////////////////////
++unsigned VidDevManager::getDevCount()
++{
++#if PJSUA_HAS_VIDEO
++    return pjsua_vid_dev_count();
++#else
++    return 0;
++#endif
++}
++
++VideoDevInfo VidDevManager::getDevInfo(int dev_id) const throw(Error)
++{
++    VideoDevInfo dev_info;
++#if PJSUA_HAS_VIDEO
++    pjmedia_vid_dev_info pj_info;
++
++    PJSUA2_CHECK_EXPR(pjsua_vid_dev_get_info(dev_id, &pj_info));
++
++    dev_info.fromPj(pj_info);
++#endif
++    return dev_info;
++}
++
++const VideoDevInfoVector &VidDevManager::enumDev() throw(Error)
++{
++#if PJSUA_HAS_VIDEO
++    pjmedia_vid_dev_info pj_info[MAX_DEV_COUNT];
++    unsigned count = MAX_DEV_COUNT;
++
++    PJSUA2_CHECK_EXPR(pjsua_vid_enum_devs(pj_info, &count));
++
++    pj_enter_critical_section();
++    clearVideoDevList();
++    for (unsigned i = 0; i<count;++i) {
++	VideoDevInfo *dev_info = new VideoDevInfo;
++	dev_info->fromPj(pj_info[i]);
++	videoDevList.push_back(dev_info);
++    }
++    pj_leave_critical_section();
++#endif
++    return videoDevList;
++}
++
++void VidDevManager::clearVideoDevList()
++{
++#if PJSUA_HAS_VIDEO
++    for (unsigned i = 0;i<videoDevList.size();++i) {
++	delete videoDevList[i];
++    }
++    videoDevList.clear();
++#endif
++}
++
++VidDevManager::VidDevManager()
++{
++}
++
++VidDevManager::~VidDevManager()
++{
++#if PJSUA_HAS_VIDEO
++    clearVideoDevList();
++#endif
++}
++
++///////////////////////////////////////////////////////////////////////////////
+ void CodecInfo::fromPj(const pjsua_codec_info &codec_info)
+ {
+     codecId = pj2Str(codec_info.codec_id);

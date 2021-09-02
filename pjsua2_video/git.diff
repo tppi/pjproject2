@@ -1,0 +1,10 @@
+git checkout bfb34064bcd79830fcd0bbe01de736b795c2f4a7
+
+git diff HEAD~ HEAD > pjsua2_video.patch
+
+git diff HEAD~ HEAD --name-only > pjsua2_video.1
+
+git diff HEAD~ HEAD --name-only | xargs zip update.zip
+
+
+

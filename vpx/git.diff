@@ -1,0 +1,7 @@
+git checkout 3c9fa7ae2dd7ab1a8a9456bb225b40146ef25094
+
+git diff HEAD~ HEAD > vpx.patch
+
+git diff HEAD~ HEAD --name-only > vpx.1
+
+git diff HEAD~ HEAD --name-only | xargs zip update.zip

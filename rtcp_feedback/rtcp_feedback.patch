@@ -1,0 +1,2270 @@
+diff --git a/pjmedia/build/pjmedia.vcproj b/pjmedia/build/pjmedia.vcproj
+index 670b5cf..444e729 100644
+--- a/pjmedia/build/pjmedia.vcproj
++++ b/pjmedia/build/pjmedia.vcproj
+@@ -5635,6 +5635,10 @@
+ 				</FileConfiguration>
+ 			</File>
+ 			<File
++				RelativePath="..\src\pjmedia\rtcp_fb.c"
++				>
++			</File>
++			<File
+ 				RelativePath="..\src\pjmedia\rtcp_xr.c"
+ 				>
+ 			</File>
+@@ -7600,6 +7604,10 @@
+ 				>
+ 			</File>
+ 			<File
++				RelativePath="..\include\pjmedia\rtcp_fb.h"
++				>
++			</File>
++			<File
+ 				RelativePath="..\include\pjmedia\rtcp_xr.h"
+ 				>
+ 			</File>
+diff --git a/pjmedia/include/pjmedia/config.h b/pjmedia/include/pjmedia/config.h
+index eb59490..08f0426 100644
+--- a/pjmedia/include/pjmedia/config.h
++++ b/pjmedia/include/pjmedia/config.h
+@@ -567,6 +567,16 @@
+ 
+ 
+ /**
++ * Specify the maximum number of RTCP Feedback capability definition.
++ * 
++ * Default: 16
++ */
++#ifndef PJMEDIA_RTCP_FB_MAX_CAP
++#   define PJMEDIA_RTCP_FB_MAX_CAP		16
++#endif
++
++
++/**
+  * Specify how long (in miliseconds) the stream should suspend the
+  * silence detector/voice activity detector (VAD) during the initial
+  * period of the session. This feature is useful to open bindings in
+diff --git a/pjmedia/include/pjmedia/rtcp_fb.h b/pjmedia/include/pjmedia/rtcp_fb.h
+new file mode 100644
+index 0000000..8a2328d
+--- /dev/null
++++ b/pjmedia/include/pjmedia/rtcp_fb.h
+@@ -0,0 +1,350 @@
++/* $Id$ */
++/* 
++ * Copyright (C) 2018 Teluu Inc. (http://www.teluu.com)
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA 
++ */
++#ifndef __PJMEDIA_RTCP_FB_H__
++#define __PJMEDIA_RTCP_FB_H__
++
++/**
++ * @file rtcp_fb.h
++ * @brief RTCP Feedback implementation.
++ */
++
++#include <pjmedia/rtcp.h>
++#include <pjmedia/sdp.h>
++
++
++PJ_BEGIN_DECL
++
++
++/**
++ * @defgroup PJMED_RTCP_FB RTCP Feedback - RFC 4585
++ * @ingroup PJMEDIA_SESSION
++ * @brief RTCP Feedback extension to RTCP session
++ * @{
++ *
++ * PJMEDIA implements RTCP Feedback specification (RFC 4585) to enable
++ * receivers to provide more immediate feedback to the senders.
++ */
++
++
++/**
++ * Enumeration of RTCP Feedback types.
++ */
++typedef enum pjmedia_rtcp_fb_type
++{
++    PJMEDIA_RTCP_FB_ACK,     /**< Positive acknowledgement feedbacks.	    */
++    PJMEDIA_RTCP_FB_NACK,    /**< Negative acknowledgement feedbacks.	    */
++    PJMEDIA_RTCP_FB_TRR_INT, /**< Minimum interval between two regular RTCP
++				  packets.				    */
++    PJMEDIA_RTCP_FB_OTHER    /**< Other feedback type.			    */
++} pjmedia_rtcp_fb_type;
++
++
++/**
++ * This structure declare RTCP Feedback capability.
++ */
++typedef struct pjmedia_rtcp_fb_cap
++{
++    /**
++     * Specify the codecs to which the capability is applicable. Codec ID is
++     * using the same format as in pjmedia_codec_mgr_find_codecs_by_id() and
++     * pjmedia_vid_codec_mgr_find_codecs_by_id(), e.g: "L16/8000/1", "PCMU",
++     * "H264". This can also be an asterisk ("*") to represent all codecs.
++     */
++    pj_str_t		    codec_id;
++
++    /**
++     * Specify the RTCP Feedback type.
++     */
++    pjmedia_rtcp_fb_type    type;
++
++    /**
++     * Specify the type name if RTCP Feedback type is PJMEDIA_RTCP_FB_OTHER.
++     */
++    pj_str_t		    type_name;
++
++    /**
++     * Specify the RTCP Feedback parameters.
++     */
++    pj_str_t		    param;
++
++} pjmedia_rtcp_fb_cap;
++
++
++/**
++ * This structure declares RTCP Feedback information.
++ */
++typedef struct pjmedia_rtcp_fb_info
++{
++    /**
++     * Number of RTCP Feedback capabilities.
++     */
++    unsigned		     cap_count;
++
++    /**
++     * The RTCP Feedback capabilities.
++     */
++    pjmedia_rtcp_fb_cap	     caps[PJMEDIA_RTCP_FB_MAX_CAP];
++
++} pjmedia_rtcp_fb_info;
++
++
++/**
++ * This structure declares RTCP Feedback configuration settings.
++ */
++typedef struct pjmedia_rtcp_fb_setting
++{
++    /**
++     * Specify whether transport protocol in SDP media description uses
++     * RTP/AVP instead of RTP/AVPF. Note that the standard mandates to signal
++     * AVPF profile, but it may cause SDP negotiation failure when negotiating
++     * with endpoints that does not support RTCP Feedback (including older
++     * version of PJSIP).
++     *
++     * Default: PJ_FALSE.
++     */
++    pj_bool_t		     dont_use_avpf;
++
++    /**
++     * Number of RTCP Feedback capabilities.
++     */
++    unsigned		     cap_count;
++
++    /**
++     * The RTCP Feedback capabilities.
++     */
++    pjmedia_rtcp_fb_cap	     caps[PJMEDIA_RTCP_FB_MAX_CAP];
++
++} pjmedia_rtcp_fb_setting;
++
++
++/**
++ * Initialize RTCP Feedback setting with default values.
++ *
++ * @param opt		The RTCP Feedback setting to be initialized.
++ *
++ * @return		PJ_SUCCESS on success.
++ */
++PJ_DECL(pj_status_t) pjmedia_rtcp_fb_setting_default(
++					pjmedia_rtcp_fb_setting *opt);
++
++
++/**
++ * Duplicate RTCP Feedback setting.
++ *
++ * @param pool		Pool to be used for duplicating the config.
++ * @param dst		Destination configuration.
++ * @param src		Source configuration.
++ *
++ * @return		PJ_SUCCESS on success.
++ */
++PJ_DECL(void) pjmedia_rtcp_fb_setting_dup(pj_pool_t *pool,
++					  pjmedia_rtcp_fb_setting *dst,
++					  const pjmedia_rtcp_fb_setting *src);
++
++
++/**
++ * Duplicate RTCP Feedback info.
++ *
++ * @param pool		Pool to be used for duplicating the info.
++ * @param dst		Destination info.
++ * @param src		Source info.
++ *
++ * @return		PJ_SUCCESS on success.
++ */
++PJ_DECL(void) pjmedia_rtcp_fb_info_dup(pj_pool_t *pool,
++				       pjmedia_rtcp_fb_info *dst,
++				       const pjmedia_rtcp_fb_info *src);
++
++
++/**
++ * Encode RTCP Feedback specific information into local SDP according to
++ * the provided RTCP Feedback setting. This is useful to signal remote
++ * endpoint that local endpoint is capable and willing to receive RTCP
++ * Feedback packets as described in the local SDP.
++ *
++ * @param pool		Pool object to allocate memory in updating local SDP.
++ * @param endpt		The media endpoint.
++ * @param opt		RTCP Feedback setting.
++ * @param sdp_local	The local SDP to be filled in information from the
++ *			media transport.
++ * @param med_idx	The SDP media index.
++ * @param sdp_remote	Remote SDP or NULL if local is offerer.
++ *
++ * @return		PJ_SUCCESS on success.
++ */
++PJ_DECL(pj_status_t) pjmedia_rtcp_fb_encode_sdp(
++				    pj_pool_t *pool,
++				    pjmedia_endpt *endpt,
++				    const pjmedia_rtcp_fb_setting *opt,
++				    pjmedia_sdp_session *sdp_local,
++				    unsigned med_idx,
++				    const pjmedia_sdp_session *sdp_remote);
++
++
++/**
++ * Decode RTCP Feedback specific information from SDP media.
++ *
++ * @param pool		Pool object to allocate memory.
++ * @param endpt		The media endpoint.
++ * @param opt		Options, currently it must be NULL.
++ * @param sdp		The SDP.
++ * @param med_idx	The SDP media index.
++ * @param info		The RTCP-FB info fetched from SDP.
++ *
++ * @return		PJ_SUCCESS on success.
++ */
++PJ_DECL(pj_status_t) pjmedia_rtcp_fb_decode_sdp(
++				    pj_pool_t *pool,
++				    pjmedia_endpt *endpt,
++				    const void *opt,
++				    const pjmedia_sdp_session *sdp,
++				    unsigned med_idx,
++				    pjmedia_rtcp_fb_info *info);
++
++
++/**
++ * This structure declares RTCP Feedback Generic NACK message.
++ */
++typedef struct pjmedia_rtcp_fb_nack
++{
++    pj_int32_t		 pid;		/**< Packet ID (RTP seq)    */
++    pj_uint16_t		 blp;		/**< Bitmask of following lost
++					     packets		    */
++} pjmedia_rtcp_fb_nack;
++
++
++/**
++ * Build an RTCP Feedback Generic NACK packet. This packet can be appended to
++ * other RTCP packets, e.g: RTCP RR/SR, to compose a compound RTCP packet.
++ * See also RFC 4585 Section 6.2.1 about Generic NACK message.
++ *
++ * @param session   The RTCP session.
++ * @param buf	    The buffer to receive RTCP Feedback packet.
++ * @param length    On input, it will contain the buffer length.
++ *		    On output, it will contain the generated RTCP Feedback
++ *		    packet length.
++ * @param nack_cnt  The number of RTCP Feedback Generic NACK messages.
++ * @param nack	    The array of RTCP Feedback Generic NACK messages.
++ *
++ * @return	    PJ_SUCCESS on success.
++ */
++PJ_DECL(pj_status_t) pjmedia_rtcp_fb_build_nack(
++					pjmedia_rtcp_session *session,
++					void *buf,
++					pj_size_t *length,
++					unsigned nack_cnt,
++					const pjmedia_rtcp_fb_nack nack[]);
++
++
++/**
++ * Build an RTCP Feedback Picture Loss Indication (PLI) packet. This packet
++ * can be appended to other RTCP packets, e.g: RTCP RR/SR, to compose a
++ * compound RTCP packet. See also RFC 4585 Section 6.3.1 about PLI FB message.
++ *
++ * @param session   The RTCP session.
++ * @param buf	    The buffer to receive RTCP Feedback packet.
++ * @param length    On input, it will contain the buffer length.
++ *		    On output, it will contain the generated RTCP Feedback
++ *		    packet length.
++ *
++ * @return	    PJ_SUCCESS on success.
++ */
++PJ_DECL(pj_status_t) pjmedia_rtcp_fb_build_pli(
++					pjmedia_rtcp_session *session, 
++					void *buf,
++					pj_size_t *length);
++
++
++/**
++ * This structure declares RTCP Feedback Slice Loss Indication (SLI) message.
++ */
++typedef struct pjmedia_rtcp_fb_sli
++{
++    pj_uint16_t		 first;		/**< First lost macroblock	*/
++    pj_uint16_t		 number;	/**< The number of lost macroblocks
++					     packets			*/
++    pj_uint8_t		 pict_id;	/**< Picture ID (temporal ref)	*/
++} pjmedia_rtcp_fb_sli;
++
++
++/**
++ * Build an RTCP Feedback Slice Loss Indication (SLI) packet. This packet can
++ * be appended to other RTCP packets, e.g: RTCP RR/SR, to compose a compound
++ * RTCP packet. See also RFC 4585 Section 6.3.2 about SLI FB message.
++ *
++ * @param session   The RTCP session.
++ * @param buf	    The buffer to receive RTCP Feedback packet.
++ * @param length    On input, it will contain the buffer length.
++ *		    On output, it will contain the generated RTCP Feedback
++ *		    packet length.
++ * @param sli_cnt   The number of RTCP Feedback SLI messages.
++ * @param sli	    The array of RTCP Feedback SLI messages.
++ *
++ * @return	    PJ_SUCCESS on success.
++ */
++PJ_DECL(pj_status_t) pjmedia_rtcp_fb_build_sli(
++					pjmedia_rtcp_session *session, 
++					void *buf,
++					pj_size_t *length,
++					unsigned sli_cnt,
++					const pjmedia_rtcp_fb_sli sli[]);
++
++
++/**
++ * This structure declares RTCP Feedback Reference Picture Selection
++ * Indication (RPSI) message.
++ */
++typedef struct pjmedia_rtcp_fb_rpsi
++{
++    pj_uint8_t		 pt;		/**< Payload Type		*/
++    pj_str_t		 rpsi;		/**< Native RPSI bit string	*/
++    pj_size_t		 rpsi_bit_len;	/**< Length of RPSI in bit	*/
++} pjmedia_rtcp_fb_rpsi;
++
++
++/**
++ * Build an RTCP Feedback Reference Picture Selection Indication (RPSI)
++ * packet. This packet can be appended to other RTCP packets, e.g: RTCP RR/SR,
++ * to compose a compound RTCP packet. See also RFC 4585 Section 6.3.3 about
++ * RPSI FB message.
++ *
++ * @param session   The RTCP session.
++ * @param buf	    The buffer to receive RTCP Feedback packet.
++ * @param length    On input, it will contain the buffer length.
++ *		    On output, it will contain the generated RTCP Feedback
++ *		    packet length.
++ * @param rpsi	    The RTCP Feedback RPSI message.
++ *
++ * @return	    PJ_SUCCESS on success.
++ */
++PJ_DECL(pj_status_t) pjmedia_rtcp_fb_build_rpsi(
++					pjmedia_rtcp_session *session, 
++					void *buf,
++					pj_size_t *length,
++					const pjmedia_rtcp_fb_rpsi *rpsi);
++
++
++/**
++ * @}
++ */
++
++PJ_END_DECL
++
++
++#endif	/* __PJMEDIA_RTCP_FB_H__ */
+diff --git a/pjmedia/include/pjmedia/sdp.h b/pjmedia/include/pjmedia/sdp.h
+index e76483b..0b54d26 100644
+--- a/pjmedia/include/pjmedia/sdp.h
++++ b/pjmedia/include/pjmedia/sdp.h
+@@ -602,6 +602,18 @@ PJ_DECL(pj_status_t) pjmedia_sdp_transport_cmp(const pj_str_t *t1,
+ 
+ 
+ /**
++ * Get media transport protocol info, i.e: base transport and profiles,
++ * from the provided SDP media transport name string.
++ *
++ * @param tp	    The SDP media transport name.
++ *
++ * @return	    Media transport info, combination of transport protocol
++ *		    and profile bit flag defined in pjmedia_tp_proto.
++ */
++PJ_DECL(pj_uint32_t) pjmedia_sdp_transport_get_proto(const pj_str_t *tp);
++
++
++/**
+  * Deactivate SDP media.
+  *
+  * @param pool	    Memory pool to allocate memory from.
+diff --git a/pjmedia/include/pjmedia/stream.h b/pjmedia/include/pjmedia/stream.h
+index 6aab6ff..2f74b52 100644
+--- a/pjmedia/include/pjmedia/stream.h
++++ b/pjmedia/include/pjmedia/stream.h
+@@ -31,6 +31,7 @@
+ #include <pjmedia/jbuf.h>
+ #include <pjmedia/port.h>
+ #include <pjmedia/rtcp.h>
++#include <pjmedia/rtcp_fb.h>
+ #include <pjmedia/transport.h>
+ #include <pjmedia/vid_codec.h>
+ #include <pjmedia/stream_common.h>
+@@ -109,6 +110,8 @@ typedef struct pjmedia_stream_info
+ 					 stream. If sin_family is zero, 
+ 					 this will be ignored.		    */
+ #endif
++    pjmedia_rtcp_fb_info loc_rtcp_fb; /**< Local RTCP-FB info.		    */
++    pjmedia_rtcp_fb_info rem_rtcp_fb; /**< Remote RTCP-FB info.		    */
+     pjmedia_codec_info	fmt;	    /**< Incoming codec format info.	    */
+     pjmedia_codec_param *param;	    /**< Optional codec param.		    */
+     unsigned		tx_pt;	    /**< Outgoing codec paylaod type.	    */
+diff --git a/pjmedia/include/pjmedia/types.h b/pjmedia/include/pjmedia/types.h
+index 486f0ed..81a6c6b 100644
+--- a/pjmedia/include/pjmedia/types.h
++++ b/pjmedia/include/pjmedia/types.h
+@@ -72,24 +72,79 @@ typedef enum pjmedia_type
+ 
+ 
+ /**
+- * Media transport protocol.
++ * Media transport protocol and profile.
+  */
+ typedef enum pjmedia_tp_proto
+ {
++    /* Basic transports */
++
+     /** No transport type */
+-    PJMEDIA_TP_PROTO_NONE = 0,
++    PJMEDIA_TP_PROTO_NONE	    = 0,
++
++    /** Transport unknown */
++    PJMEDIA_TP_PROTO_UNKNOWN	    = (1 << 0),
++
++    /** UDP transport */
++    PJMEDIA_TP_PROTO_UDP	    = (1 << 1),
++
++    /** RTP transport */
++    PJMEDIA_TP_PROTO_RTP	    = (1 << 2),
++
++    /** DTLS transport */
++    PJMEDIA_TP_PROTO_DTLS	    = (1 << 3),
++
++
++    /* Basic profiles */
++    
++    /** RTCP Feedback profile */
++    PJMEDIA_TP_PROFILE_RTCP_FB	    = (1 << 13),
++
++    /** Secure RTP profile */
++    PJMEDIA_TP_PROFILE_SRTP	    = (1 << 14),
++
++    /** Audio/video profile */
++    PJMEDIA_TP_PROFILE_AVP	    = (1 << 15),
++
++
++    /* Predefined transport profiles (commonly used) */
+ 
+     /** RTP using A/V profile */
+-    PJMEDIA_TP_PROTO_RTP_AVP,
++    PJMEDIA_TP_PROTO_RTP_AVP	    = (PJMEDIA_TP_PROTO_RTP |
++				       PJMEDIA_TP_PROFILE_AVP),
++
++    /** Secure RTP using A/V profile */
++    PJMEDIA_TP_PROTO_RTP_SAVP	    = (PJMEDIA_TP_PROTO_RTP_AVP |
++				       PJMEDIA_TP_PROFILE_SRTP),
++
++    /** Secure RTP using A/V profile and DTLS-SRTP keying */
++    PJMEDIA_TP_PROTO_DTLS_SRTP	    = (PJMEDIA_TP_PROTO_DTLS |
++				       PJMEDIA_TP_PROTO_RTP_SAVP),
+ 
+-    /** Secure RTP */
+-    PJMEDIA_TP_PROTO_RTP_SAVP,
++    /** RTP using A/V and RTCP feedback profile */
++    PJMEDIA_TP_PROTO_RTP_AVPF	    = (PJMEDIA_TP_PROTO_RTP_AVP |
++				       PJMEDIA_TP_PROFILE_RTCP_FB),
+ 
+-    /** Unknown */
+-    PJMEDIA_TP_PROTO_UNKNOWN
++    /** Secure RTP using A/V and RTCP feedback profile */
++    PJMEDIA_TP_PROTO_RTP_SAVPF	    = (PJMEDIA_TP_PROTO_RTP_SAVP |
++				       PJMEDIA_TP_PROFILE_RTCP_FB),
++
++    /** Secure RTP using A/V and RTCP feedback profile and DTLS-SRTP keying */
++    PJMEDIA_TP_PROTO_DTLS_SRTPF	    = (PJMEDIA_TP_PROTO_DTLS_SRTP |
++				       PJMEDIA_TP_PROFILE_RTCP_FB),
+ 
+ } pjmedia_tp_proto;
+ 
++/**
++ * Macro helper for checking if a transport protocol contains specific
++ * transport and profile flags.
++ */
++#define PJMEDIA_TP_PROTO_HAS_FLAG(TP_PROTO, FLAGS) \
++				    (((TP_PROTO) & (FLAGS)) == (FLAGS))
++
++/**
++ * Macro helper for excluding specific flags in transport protocol.
++ */
++#define PJMEDIA_TP_PROTO_TRIM_FLAG(TP_PROTO, FLAGS) ((TP_PROTO) &= ~(FLAGS))
+ 
+ /**
+  * Media direction.
+diff --git a/pjmedia/src/pjmedia/rtcp_fb.c b/pjmedia/src/pjmedia/rtcp_fb.c
+new file mode 100644
+index 0000000..cc75764
+--- /dev/null
++++ b/pjmedia/src/pjmedia/rtcp_fb.c
+@@ -0,0 +1,582 @@
++/* $Id$ */
++/* 
++ * Copyright (C) 2018 Teluu Inc. (http://www.teluu.com)
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA 
++ */
++
++#include <pjmedia/rtcp_fb.h>
++#include <pjmedia/codec.h>
++#include <pjmedia/endpoint.h>
++#include <pjmedia/errno.h>
++#include <pj/assert.h>
++#include <pj/log.h>
++#include <pj/os.h>
++#include <pj/sock.h>
++#include <pj/string.h>
++
++#define THIS_FILE "rtcp_fb.c"
++
++#define RTCP_RTPFB	205
++#define RTCP_PSFB	206
++
++/*
++ * Build an RTCP-FB Generic NACK packet.
++ */
++PJ_DEF(pj_status_t) pjmedia_rtcp_fb_build_nack(
++					pjmedia_rtcp_session *session,
++					void *buf,
++					pj_size_t *length,
++					unsigned nack_cnt,
++					const pjmedia_rtcp_fb_nack nack[])
++{
++    pjmedia_rtcp_common *hdr;
++    pj_uint8_t *p;
++    unsigned len, i;
++
++    PJ_ASSERT_RETURN(session && buf && length && nack_cnt && nack, PJ_EINVAL);
++
++    len = (3 + nack_cnt) * 4;
++    if (len > *length)
++	return PJ_ETOOSMALL;
++
++    /* Build RTCP-FB NACK header */
++    hdr = (pjmedia_rtcp_common*)buf;
++    pj_memcpy(hdr, &session->rtcp_rr_pkt.common,  sizeof(*hdr));
++    hdr->pt = RTCP_RTPFB;
++    hdr->count = 1; /* FMT = 1 */
++    hdr->length = pj_htons((pj_uint16_t)(len/4 - 1));
++
++    /* Build RTCP-FB NACK FCI */
++    p = (pj_uint8_t*)hdr + sizeof(*hdr);
++    for (i = 0; i < nack_cnt; ++i) {
++	pj_uint16_t val;
++	val = pj_htons((pj_uint16_t)nack[i].pid);
++	pj_memcpy(p, &val, 2);
++	val = pj_htons(nack[i].blp);
++	pj_memcpy(p+2, &val, 2);
++	p += 4;
++    }
++
++    /* Finally */
++    *length = len;
++
++    return PJ_SUCCESS;
++}
++
++
++/*
++ * Build an RTCP-FB Picture Loss Indication (PLI) packet.
++ */
++PJ_DEF(pj_status_t) pjmedia_rtcp_fb_build_pli(
++					pjmedia_rtcp_session *session, 
++					void *buf,
++					pj_size_t *length)
++{
++    pjmedia_rtcp_common *hdr;
++    unsigned len;
++
++    PJ_ASSERT_RETURN(session && buf && length, PJ_EINVAL);
++
++    len = 12;
++    if (len > *length)
++	return PJ_ETOOSMALL;
++
++    /* Build RTCP-FB PLI header */
++    hdr = (pjmedia_rtcp_common*)buf;
++    pj_memcpy(hdr, &session->rtcp_rr_pkt.common,  sizeof(*hdr));
++    hdr->pt = RTCP_PSFB;
++    hdr->count = 1; /* FMT = 1 */
++    hdr->length = pj_htons((pj_uint16_t)(len/4 - 1));
++
++    /* Finally */
++    *length = len;
++
++    return PJ_SUCCESS;
++}
++
++
++/*
++ * Build an RTCP-FB Slice Loss Indication (SLI) packet.
++ */
++PJ_DEF(pj_status_t) pjmedia_rtcp_fb_build_sli(
++					pjmedia_rtcp_session *session, 
++					void *buf,
++					pj_size_t *length,
++					unsigned sli_cnt,
++					const pjmedia_rtcp_fb_sli sli[])
++{
++    pjmedia_rtcp_common *hdr;
++    pj_uint8_t *p;
++    unsigned len, i;
++
++    PJ_ASSERT_RETURN(session && buf && length && sli_cnt && sli, PJ_EINVAL);
++
++    len = (3 + sli_cnt) * 4;
++    if (len > *length)
++	return PJ_ETOOSMALL;
++
++    /* Build RTCP-FB SLI header */
++    hdr = (pjmedia_rtcp_common*)buf;
++    pj_memcpy(hdr, &session->rtcp_rr_pkt.common,  sizeof(*hdr));
++    hdr->pt = RTCP_PSFB;
++    hdr->count = 2; /* FMT = 2 */
++    hdr->length = pj_htons((pj_uint16_t)(len/4 - 1));
++
++    /* Build RTCP-FB SLI FCI */
++    p = (pj_uint8_t*)hdr + sizeof(*hdr);
++    for (i = 0; i < sli_cnt; ++i) {
++	/* 'first' takes 13 bit */
++	*p++  = (pj_uint8_t)((sli[i].first >> 5) & 0xFF);   /* 8 MSB bits */
++	*p    = (pj_uint8_t)((sli[i].first & 31) << 3);	    /* 5 LSB bits */
++	/* 'number' takes 13 bit */
++	*p++ |= (pj_uint8_t)((sli[i].number >> 10) & 7);    /* 3 MSB bits */
++	*p++  = (pj_uint8_t)((sli[i].number >> 2) & 0xFF);  /* 8 mid bits */
++	*p    = (pj_uint8_t)((sli[i].number & 3) << 6);	    /* 2 LSB bits */
++	/* 'pict_id' takes 6 bit */
++	*p++ |= (sli[i].pict_id & 63);
++    }
++
++    /* Finally */
++    *length = len;
++
++    return PJ_SUCCESS;
++}
++
++
++/*
++ * Build an RTCP-FB Slice Loss Indication (SLI) packet.
++ */
++PJ_DEF(pj_status_t) pjmedia_rtcp_fb_build_rpsi(
++					    pjmedia_rtcp_session *session, 
++					    void *buf,
++					    pj_size_t *length,
++					    const pjmedia_rtcp_fb_rpsi *rpsi)
++{
++    pjmedia_rtcp_common *hdr;
++    pj_uint8_t *p;
++    unsigned bitlen, padlen, len;
++
++    PJ_ASSERT_RETURN(session && buf && length && rpsi, PJ_EINVAL);
++
++    bitlen = rpsi->rpsi_bit_len + 16;
++    padlen = (32 - (bitlen % 32)) % 32;
++    len = (3 + (bitlen+padlen)/32) * 4;
++    if (len > *length)
++	return PJ_ETOOSMALL;
++
++    /* Build RTCP-FB RPSI header */
++    hdr = (pjmedia_rtcp_common*)buf;
++    pj_memcpy(hdr, &session->rtcp_rr_pkt.common,  sizeof(*hdr));
++    hdr->pt = RTCP_PSFB;
++    hdr->count = 3; /* FMT = 3 */
++    hdr->length = pj_htons((pj_uint16_t)(len/4 - 1));
++
++    /* Build RTCP-FB RPSI FCI */
++    p = (pj_uint8_t*)hdr + sizeof(*hdr);
++    /* PB (number of padding bits) */
++    *p++ = (pj_uint8_t)padlen;
++    /* Payload type */
++    *p++ = rpsi->pt & 0x7F;
++    /* RPSI bit string */
++    pj_memcpy(p, rpsi->rpsi.ptr, rpsi->rpsi_bit_len/8);
++    p += rpsi->rpsi_bit_len/8;
++    if (rpsi->rpsi_bit_len % 8) {
++	*p++ = *(rpsi->rpsi.ptr + rpsi->rpsi_bit_len/8);
++    }
++    /* Zero padding */
++    if (padlen >= 8)
++	pj_bzero(p, padlen/8);
++
++    /* Finally */
++    *length = len;
++
++    return PJ_SUCCESS;
++}
++
++
++/*
++ * Initialize RTCP Feedback setting with default values.
++ */
++PJ_DEF(pj_status_t) pjmedia_rtcp_fb_setting_default(
++					pjmedia_rtcp_fb_setting *opt)
++{
++    pj_bzero(opt, sizeof(*opt));
++
++    /* == just for test == */
++    opt->cap_count = 4;
++
++    pj_cstr(&opt->caps[0].codec_id, "*");
++    opt->caps[0].type = PJMEDIA_RTCP_FB_ACK;
++    
++    pj_cstr(&opt->caps[1].codec_id, "speex/16000");
++    opt->caps[1].type = PJMEDIA_RTCP_FB_NACK;
++    
++    pj_cstr(&opt->caps[2].codec_id, "H264");
++    opt->caps[2].type = PJMEDIA_RTCP_FB_NACK;
++    pj_cstr(&opt->caps[2].param, "pli");
++
++    pj_cstr(&opt->caps[3].codec_id, "pcmu");
++    opt->caps[3].type = PJMEDIA_RTCP_FB_NACK;
++    /* == just for test == */
++
++    return PJ_SUCCESS;
++}
++
++
++static void pjmedia_rtcp_fb_cap_dup(pj_pool_t *pool,
++				    pjmedia_rtcp_fb_cap *dst,
++				    const pjmedia_rtcp_fb_cap *src)
++{
++    pj_strdup(pool, &dst->codec_id, &src->codec_id);
++    dst->type = src->type;
++    pj_strdup(pool, &dst->type_name, &src->type_name);
++    pj_strdup(pool, &dst->param, &src->param);
++}
++
++
++/*
++ * Duplicate RTCP Feedback setting.
++ */
++PJ_DEF(void) pjmedia_rtcp_fb_setting_dup( pj_pool_t *pool,
++					  pjmedia_rtcp_fb_setting *dst,
++					  const pjmedia_rtcp_fb_setting *src)
++{
++    unsigned i;
++
++    pj_assert(pool && dst && src);
++
++    pj_memcpy(dst, src, sizeof(pjmedia_rtcp_fb_setting));
++    for (i = 0; i < src->cap_count; ++i) {
++	pjmedia_rtcp_fb_cap_dup(pool, &dst->caps[i], &src->caps[i]);
++    }
++}
++
++
++/*
++ * Duplicate RTCP Feedback info.
++ */
++PJ_DEF(void) pjmedia_rtcp_fb_info_dup( pj_pool_t *pool,
++				       pjmedia_rtcp_fb_info *dst,
++				       const pjmedia_rtcp_fb_info *src)
++{
++    unsigned i;
++
++    pj_assert(pool && dst && src);
++
++    pj_memcpy(dst, src, sizeof(pjmedia_rtcp_fb_info));
++    for (i = 0; i < src->cap_count; ++i) {
++	pjmedia_rtcp_fb_cap_dup(pool, &dst->caps[i], &src->caps[i]);
++    }
++}
++
++
++
++struct rtcp_fb_type_name_t
++{
++    pjmedia_rtcp_fb_type     type;
++    const char		    *name;
++} rtcp_fb_type_name[] =
++{
++    {PJMEDIA_RTCP_FB_ACK,	"ack"},
++    {PJMEDIA_RTCP_FB_NACK,	"nack"},
++    {PJMEDIA_RTCP_FB_TRR_INT,	"trr-int"}
++};
++
++/* Generate a=rtcp-fb based on the specified PT & RTCP-FB capability */
++static pj_status_t add_sdp_attr_rtcp_fb( pj_pool_t *pool,
++					 const char *pt,
++					 const pjmedia_rtcp_fb_cap *cap,
++					 pjmedia_sdp_media *m)
++{
++    pjmedia_sdp_attr *a;
++    char tmp[128];
++    pj_str_t val;
++    pj_str_t type_name = {0};
++
++    if (cap->type < PJMEDIA_RTCP_FB_OTHER)
++	pj_cstr(&type_name, rtcp_fb_type_name[cap->type].name);
++    else if (cap->type == PJMEDIA_RTCP_FB_OTHER)
++	type_name = cap->type_name;
++
++    if (type_name.slen == 0)
++	return PJ_EINVAL;
++
++    /* Generate RTCP FB param */
++    if (cap->param.slen) {
++	pj_ansi_snprintf(tmp, sizeof(tmp), "%s %.*s %.*s", pt,
++			 type_name.slen, type_name.ptr,
++			 cap->param.slen, cap->param.ptr);
++    } else {
++	pj_ansi_snprintf(tmp, sizeof(tmp), "%s %.*s", pt,
++			 type_name.slen, type_name.ptr);
++    }
++    pj_strset2(&val, tmp);
++
++    /* Generate and add SDP attribute a=rtcp-fb */
++    a = pjmedia_sdp_attr_create(pool, "rtcp-fb", &val);
++    m->attr[m->attr_count++] = a;
++
++    return PJ_SUCCESS;
++}
++
++/* SDP codec info (ID and PT) */
++typedef struct sdp_codec_info_t
++{
++    char	 id[32];
++    unsigned	 pt;
++} sdp_codec_info_t;
++
++
++/* Populate codec ID/name and PT in SDP */
++static pj_status_t get_codec_info_from_sdp(pjmedia_endpt *endpt,
++					   const pjmedia_sdp_media *m,
++					   unsigned *sci_cnt,
++					   sdp_codec_info_t sci[])
++{
++    pjmedia_codec_mgr *codec_mgr;
++    unsigned j, cnt = 0;
++    pj_status_t status;
++
++    codec_mgr = pjmedia_endpt_get_codec_mgr(endpt);
++    for (j = 0; j < m->desc.fmt_count && cnt < *sci_cnt; ++j) {
++	unsigned pt = 0;
++	pt = pj_strtoul(&m->desc.fmt[j]);
++	if (pt < 96) {
++	    pjmedia_codec_info *ci;
++	    status = pjmedia_codec_mgr_get_codec_info(codec_mgr,
++						      pt, &ci);
++	    if (status != PJ_SUCCESS)
++		continue;
++
++	    pjmedia_codec_info_to_id(ci, sci[cnt].id, sizeof(sci[0].id));
++	} else {
++	    pjmedia_sdp_attr *a;
++	    pjmedia_sdp_rtpmap r;
++	    a = pjmedia_sdp_media_find_attr2(m, "rtpmap",
++					     &m->desc.fmt[j]);
++	    if (a == NULL)
++		continue;
++	    status = pjmedia_sdp_attr_get_rtpmap(a, &r);
++	    if (status != PJ_SUCCESS)
++		continue;
++	    if (r.param.slen) {
++		pj_ansi_snprintf(sci[cnt].id, sizeof(sci[0].id),
++				 "%.*s/%d/%.*s",
++				 r.enc_name.slen, r.enc_name.ptr,
++				 r.clock_rate,
++				 r.param.slen, r.param.ptr);
++	    } else {
++		pj_ansi_snprintf(sci[cnt].id, sizeof(sci[0].id),
++				 "%.*s/%d/1",
++				 r.enc_name.slen, r.enc_name.ptr,
++				 r.clock_rate);
++	    }
++	}
++	sci[cnt++].pt = pt;
++    }
++    *sci_cnt = cnt;
++    
++    return PJ_SUCCESS;
++}
++
++/*
++ * Encode RTCP Feedback specific information into the SDP according to
++ * the provided RTCP Feedback setting.
++ */
++PJ_DEF(pj_status_t) pjmedia_rtcp_fb_encode_sdp(
++				    pj_pool_t *pool,
++				    pjmedia_endpt *endpt,
++				    const pjmedia_rtcp_fb_setting *opt,
++				    pjmedia_sdp_session *sdp_local,
++				    unsigned med_idx,
++				    const pjmedia_sdp_session *sdp_remote)
++{
++    pjmedia_sdp_media *m = sdp_local->media[med_idx];
++    unsigned i;
++    unsigned sci_cnt = 0;
++    sdp_codec_info_t sci[PJMEDIA_MAX_SDP_FMT];
++    pj_status_t status;
++
++    PJ_UNUSED_ARG(sdp_remote);
++
++    PJ_ASSERT_RETURN(pool && endpt&& opt && sdp_local, PJ_EINVAL);
++    PJ_ASSERT_RETURN(med_idx < sdp_local->media_count, PJ_EINVAL);
++
++    /* Add RTCP Feedback profile (AVPF), if configured to */
++    if (!opt->dont_use_avpf) {
++	unsigned proto = pjmedia_sdp_transport_get_proto(&m->desc.transport);
++	if (!PJMEDIA_TP_PROTO_HAS_FLAG(proto, PJMEDIA_TP_PROFILE_RTCP_FB)) {
++	    char *new_tp;
++	    new_tp = (char*)pj_pool_zalloc(pool, m->desc.transport.slen+1);
++	    pj_ansi_strncpy(new_tp, m->desc.transport.ptr,
++			    m->desc.transport.slen);
++	    pj_ansi_strcat(new_tp, "F");
++	    pj_strset2(&m->desc.transport, new_tp);
++	}
++    }
++
++    /* Add RTCP Feedback capability to SDP */
++    for (i = 0; i < opt->cap_count; ++i) {
++	unsigned j;
++
++	/* All codecs */
++	if (pj_strcmp2(&opt->caps[i].codec_id, "*") == 0) {
++	    status = add_sdp_attr_rtcp_fb(pool, "*", &opt->caps[i], m);
++	    if (status != PJ_SUCCESS) {
++		PJ_PERROR(3, (THIS_FILE, status,
++			  "Failed generating SDP a=rtcp-fb:*"));
++	    }
++	    continue;
++	}
++
++	/* Specific codec */
++	if (sci_cnt == 0) {
++	    sci_cnt = PJ_ARRAY_SIZE(sci);
++	    status = get_codec_info_from_sdp(endpt, m, &sci_cnt, sci);
++	    if (status != PJ_SUCCESS) {
++		PJ_PERROR(3, (THIS_FILE, status,
++			  "Failed populating codec info from SDP"));
++		return status;
++	    }
++	}
++
++	for (j = 0; j < sci_cnt; ++j) {
++	    if (pj_strnicmp2(&opt->caps[i].codec_id, sci[j].id,
++			     opt->caps[i].codec_id.slen) == 0)
++	    {
++		char tmp[4];
++		snprintf(tmp, sizeof(tmp), "%d", sci[j].pt);
++		status = add_sdp_attr_rtcp_fb(pool, tmp, &opt->caps[i], m);
++		if (status != PJ_SUCCESS) {
++		    PJ_PERROR(3, (THIS_FILE, status,
++			      "Failed generating SDP a=rtcp-fb:%d (%s)",
++			      sci[j].pt, opt->caps[i].codec_id.ptr));
++		}
++		break;
++	    }
++	}
++	if (j == sci_cnt) {
++	    /* Codec ID not found in SDP (perhaps better ignore this error
++	     * as app may configure audio and video in single setting).
++	     */
++	    PJ_PERROR(6, (THIS_FILE, PJ_ENOTFOUND,
++		      "Failed generating SDP a=rtcp-fb for %s",
++		      opt->caps[i].codec_id.ptr));
++	}
++    }
++
++    return PJ_SUCCESS;
++}
++
++
++/*
++ * Decode RTCP Feedback specific information from SDP media.
++ */
++PJ_DEF(pj_status_t) pjmedia_rtcp_fb_decode_sdp(
++				    pj_pool_t *pool,
++				    pjmedia_endpt *endpt,
++				    const void *opt,
++				    const pjmedia_sdp_session *sdp,
++				    unsigned med_idx,
++				    pjmedia_rtcp_fb_info *info)
++{
++    unsigned sci_cnt = PJMEDIA_MAX_SDP_FMT;
++    sdp_codec_info_t sci[PJMEDIA_MAX_SDP_FMT];
++    const pjmedia_sdp_media *m;
++    pj_status_t status;
++    unsigned i;
++
++    PJ_UNUSED_ARG(opt);
++
++    PJ_ASSERT_RETURN(pool && endpt && opt==NULL && sdp, PJ_EINVAL);
++    PJ_ASSERT_RETURN(med_idx < sdp->media_count, PJ_EINVAL);
++
++    m = sdp->media[med_idx];
++    status = get_codec_info_from_sdp(endpt, m, &sci_cnt, sci);
++    if (status != PJ_SUCCESS)
++	return status;
++
++    pj_bzero(info, sizeof(*info));
++
++    /* Iterate all SDP attribute a=rtcp-fb in the SDP media */
++    for (i = 0; i < m->attr_count; ++i) {
++	const pjmedia_sdp_attr *a = m->attr[i];
++	pj_str_t token;
++	pj_ssize_t tok_idx;
++	unsigned j;
++	const char *codec_id = NULL;
++	pj_str_t type_name = {0};
++	pjmedia_rtcp_fb_type type = PJMEDIA_RTCP_FB_OTHER;
++
++	/* Skip non a=rtcp-fb */
++	if (pj_strcmp2(&a->name, "rtcp-fb") != 0)
++	    continue;
++
++	/* Get PT */
++	tok_idx = pj_strtok2(&a->value, " \t", &token, 0);
++	if (tok_idx == a->value.slen)
++	    continue;
++
++	if (pj_strcmp2(&token, "*") == 0) {
++	    /* Asterisk (all codecs) */
++	    codec_id = "*";
++	} else {
++	    /* Specific PT */
++	    unsigned pt = (unsigned) pj_strtoul2(&token, NULL, 10);
++	    for (j = 0; j < sci_cnt; ++j) {
++		if (pt == sci[j].pt) {
++		    codec_id = sci[j].id;
++		    break;
++		}
++	    }
++	}
++
++	/* Skip this a=rtcp-fb if PT is not recognized */
++	if (!codec_id)
++	    continue;
++
++	/* Get RTCP-FB type */
++	tok_idx = pj_strtok2(&a->value, " \t", &token, tok_idx + token.slen);
++	if (tok_idx == a->value.slen)
++	    continue;
++
++	for (j = 0; j < PJ_ARRAY_SIZE(rtcp_fb_type_name); ++j) {
++	    if (pj_strcmp2(&token, rtcp_fb_type_name[j].name) == 0) {
++		type = rtcp_fb_type_name[j].type;
++		break;
++	    }
++	}
++	if (type == PJMEDIA_RTCP_FB_OTHER)
++	    type_name = token;
++
++	/* Got all the mandatory fields, let's initialize RTCP-FB cap */
++	pj_strdup2(pool, &info->caps[info->cap_count].codec_id, codec_id);
++	info->caps[info->cap_count].type = type;
++	if (type == PJMEDIA_RTCP_FB_OTHER)
++	    pj_strdup(pool, &info->caps[info->cap_count].type_name, &type_name);
++
++	/* Get RTCP-FB param */
++	tok_idx = pj_strtok2(&a->value, " \t", &token, tok_idx + token.slen);
++	if (tok_idx != a->value.slen)
++	    pj_strdup(pool, &info->caps[info->cap_count].param, &token);
++
++	/* Next */
++	if (++info->cap_count == PJMEDIA_RTCP_FB_MAX_CAP)
++	    break;
++    }
++
++    return PJ_SUCCESS;
++}
+diff --git a/pjmedia/src/pjmedia/sdp.c b/pjmedia/src/pjmedia/sdp.c
+index 67118c1..3d74ac8 100644
+--- a/pjmedia/src/pjmedia/sdp.c
++++ b/pjmedia/src/pjmedia/sdp.c
+@@ -1641,22 +1641,88 @@ PJ_DEF(pj_status_t) pjmedia_sdp_validate2(const pjmedia_sdp_session *sdp,
+ PJ_DEF(pj_status_t) pjmedia_sdp_transport_cmp( const pj_str_t *t1,
+ 					       const pj_str_t *t2)
+ {
+-    static const pj_str_t ID_RTP_AVP  = { "RTP/AVP", 7 };
+-    static const pj_str_t ID_RTP_SAVP = { "RTP/SAVP", 8 };
++    pj_uint32_t t1_proto, t2_proto;
+ 
+     /* Exactly equal? */
+     if (pj_stricmp(t1, t2) == 0)
+ 	return PJ_SUCCESS;
+ 
+-    /* Compatible? */
+-    if ((!pj_stricmp(t1, &ID_RTP_AVP) || !pj_stricmp(t1, &ID_RTP_SAVP)) &&
+-        (!pj_stricmp(t2, &ID_RTP_AVP) || !pj_stricmp(t2, &ID_RTP_SAVP)))
++    /* Check if boths are RTP/AVP based */
++    t1_proto = pjmedia_sdp_transport_get_proto(t1);
++    t2_proto = pjmedia_sdp_transport_get_proto(t2);
++    if (PJMEDIA_TP_PROTO_HAS_FLAG(t1_proto, PJMEDIA_TP_PROTO_RTP_AVP) && 
++	PJMEDIA_TP_PROTO_HAS_FLAG(t2_proto, PJMEDIA_TP_PROTO_RTP_AVP))
++    {
+ 	return PJ_SUCCESS;
++    }
++
++    /* Compatible? */
++    //{
++    //	static const pj_str_t ID_RTP_AVP  = { "RTP/AVP", 7 };
++    //	static const pj_str_t ID_RTP_SAVP = { "RTP/SAVP", 8 };
++    //	if ((!pj_stricmp(t1, &ID_RTP_AVP) || !pj_stricmp(t1, &ID_RTP_SAVP)) &&
++    //      (!pj_stricmp(t2, &ID_RTP_AVP) || !pj_stricmp(t2, &ID_RTP_SAVP)))
++    //	    return PJ_SUCCESS;
++    //}
+ 
+     return PJMEDIA_SDP_ETPORTNOTEQUAL;
+ }
+ 
+ 
++/*
++ * Get media transport info, e.g: protocol and profile.
++ */
++PJ_DEF(pj_uint32_t) pjmedia_sdp_transport_get_proto(const pj_str_t *tp)
++{
++    pj_str_t token, rest = {0};
++    pj_ssize_t idx;
++
++    PJ_ASSERT_RETURN(tp, PJMEDIA_TP_PROTO_NONE);
++
++    idx = pj_strtok2(tp, "/", &token, 0);
++    if (idx != tp->slen)
++	pj_strset(&rest, tp->ptr + token.slen + 1, tp->slen - token.slen - 1);
++
++    if (pj_stricmp2(&token, "RTP") == 0) {
++	/* Starts with "RTP" */
++
++	/* RTP/AVP */
++	if (pj_stricmp2(&rest, "AVP") == 0)
++	    return PJMEDIA_TP_PROTO_RTP_AVP;
++
++	/* RTP/SAVP */
++	if (pj_stricmp2(&rest, "SAVP") == 0)
++	    return PJMEDIA_TP_PROTO_RTP_SAVP;
++
++	/* RTP/AVPF */
++	if (pj_stricmp2(&rest, "AVPF") == 0)
++	    return PJMEDIA_TP_PROTO_RTP_AVPF;
++
++	/* RTP/SAVPF */
++	if (pj_stricmp2(&rest, "SAVPF") == 0)
++	    return PJMEDIA_TP_PROTO_RTP_SAVPF;
++
++    } else if (pj_stricmp2(&token, "UDP") == 0) {
++	/* Starts with "UDP" */
++
++	/* Plain UDP */
++	if (rest.slen == 0)
++	    return PJMEDIA_TP_PROTO_UDP;
++
++	/* DTLS-SRTP */
++	if (pj_stricmp2(&rest, "TLS/RTP/SAVP") == 0)
++	    return PJMEDIA_TP_PROTO_DTLS_SRTP;
++
++	/* DTLS-SRTP with RTCP-FB */
++	if (pj_stricmp2(&rest, "TLS/RTP/SAVPF") == 0)
++	    return PJMEDIA_TP_PROTO_DTLS_SRTPF;
++    }
++
++    /* Unknown transport */
++    return PJMEDIA_TP_PROTO_UNKNOWN;
++}
++
++
+ PJ_DEF(pj_status_t) pjmedia_sdp_media_deactivate(pj_pool_t *pool,
+ 						 pjmedia_sdp_media *m)
+ {
+diff --git a/pjmedia/src/pjmedia/stream.c b/pjmedia/src/pjmedia/stream.c
+index 336abcf..a3ea197 100644
+--- a/pjmedia/src/pjmedia/stream.c
++++ b/pjmedia/src/pjmedia/stream.c
+@@ -97,6 +97,7 @@ struct dtmf
+     int		    ebit_cnt;		    /**< # of E bit transmissions   */
+ };
+ 
++
+ /**
+  * This structure describes media stream.
+  * A media stream is bidirectional media transmission between two endpoints.
+@@ -245,6 +246,12 @@ struct pjmedia_stream
+ 
+     pj_uint32_t		     rtp_rx_last_ts;        /**< Last received RTP timestamp*/
+     pj_status_t		     rtp_rx_last_err;       /**< Last RTP recv() error */
++
++    /* RTCP Feedback */
++    pj_bool_t		     send_rtcp_fb_nack;/**< Should we send NACK?    */
++    pjmedia_rtcp_fb_nack     rtcp_fb_nack;     /**< NACK state.		    */
++
++
+ };
+ 
+ 
+@@ -277,7 +284,8 @@ static void on_rx_rtcp( void *data,
+ static pj_status_t send_rtcp(pjmedia_stream *stream,
+ 			     pj_bool_t with_sdes,
+ 			     pj_bool_t with_bye,
+-			     pj_bool_t with_xr);
++			     pj_bool_t with_xr,
++			     pj_bool_t with_fb);
+ 
+ 
+ #if TRACE_JB
+@@ -460,7 +468,7 @@ static void send_keep_alive_packet(pjmedia_stream *stream)
+ 			       pkt_len);
+ 
+     /* Send RTCP */
+-    send_rtcp(stream, PJ_TRUE, PJ_FALSE, PJ_FALSE);
++    send_rtcp(stream, PJ_TRUE, PJ_FALSE, PJ_FALSE, PJ_FALSE);
+     
+     /* Update stats in case the stream is paused */
+     stream->rtcp.stat.rtp_tx_last_seq = pj_ntohs(stream->enc->rtp.out_hdr.seq);
+@@ -991,10 +999,32 @@ static void create_dtmf_payload(pjmedia_stream *stream,
+ }
+ 
+ 
++static pj_status_t build_rtcp_fb(pjmedia_stream *stream, void *buf,
++				 pj_size_t *length)
++{
++    pj_status_t status;
++
++    /* Generic NACK */
++    if (stream->send_rtcp_fb_nack && stream->rtcp_fb_nack.pid >= 0)
++    {
++	status = pjmedia_rtcp_fb_build_nack(&stream->rtcp, buf, length, 1,
++					    &stream->rtcp_fb_nack);
++	if (status != PJ_SUCCESS)
++	    return status;
++
++	/* Reset Packet ID */
++	stream->rtcp_fb_nack.pid = -1;
++    }
++
++    return PJ_SUCCESS;
++}
++
++
+ static pj_status_t send_rtcp(pjmedia_stream *stream,
+ 			     pj_bool_t with_sdes,
+ 			     pj_bool_t with_bye,
+-			     pj_bool_t with_xr)
++			     pj_bool_t with_xr,
++			     pj_bool_t with_fb)
+ {
+     void *sr_rr_pkt;
+     pj_uint8_t *pkt;
+@@ -1008,7 +1038,7 @@ static pj_status_t send_rtcp(pjmedia_stream *stream,
+     with_xr = PJ_FALSE;
+ #endif
+ 
+-    if (with_sdes || with_bye || with_xr) {
++    if (with_sdes || with_bye || with_xr || with_fb) {
+ 	pkt = (pj_uint8_t*) stream->out_rtcp_pkt;
+ 	pj_memcpy(pkt, sr_rr_pkt, len);
+ 	max_len = stream->out_rtcp_pkt_size;
+@@ -1017,6 +1047,10 @@ static pj_status_t send_rtcp(pjmedia_stream *stream,
+ 	max_len = len;
+     }
+ 
++    /* RTCP FB must be sent in compound (i.e: with RR/SR and SDES) */
++    if (with_fb)
++	with_sdes = PJ_TRUE;
++
+     /* Build RTCP SDES packet */
+     if (with_sdes) {
+ 	pjmedia_rtcp_sdes sdes;
+@@ -1035,6 +1069,17 @@ static pj_status_t send_rtcp(pjmedia_stream *stream,
+ 	}
+     }
+ 
++    if (with_fb) {
++	pj_size_t fb_len = max_len - len;
++	status = build_rtcp_fb(stream, pkt+len, &fb_len);
++	if (status != PJ_SUCCESS) {
++	    PJ_PERROR(4,(stream->port.info.name.ptr, status,
++        			     "Error generating RTCP FB"));
++	} else {
++	    len += (int)fb_len;
++	}
++    }
++
+     /* Build RTCP XR packet */
+ #if defined(PJMEDIA_HAS_RTCP_XR) && (PJMEDIA_HAS_RTCP_XR != 0)
+     if (with_xr) {
+@@ -1136,7 +1181,7 @@ static void check_tx_rtcp(pjmedia_stream *stream, pj_uint32_t timestamp)
+ #endif
+ 
+ 	status = send_rtcp(stream, !stream->rtcp_sdes_bye_disabled, PJ_FALSE,
+-			   with_xr);
++			   with_xr, PJ_FALSE);
+ 	if (status != PJ_SUCCESS) {
+ 	    PJ_PERROR(4,(stream->port.info.name.ptr, status,
+         		 "Error sending RTCP"));
+@@ -1679,7 +1724,7 @@ static void on_rx_rtp( pjmedia_tp_cb_param *param)
+     const pjmedia_rtp_hdr *hdr;
+     const void *payload;
+     unsigned payloadlen;
+-    pjmedia_rtp_status seq_st;
++    pjmedia_rtp_status seq_st = {0};
+     pj_status_t status;
+     pj_bool_t pkt_discarded = PJ_FALSE;
+ 
+@@ -2005,10 +2050,32 @@ on_return:
+     pjmedia_rtcp_rx_rtp2(&stream->rtcp, pj_ntohs(hdr->seq),
+ 			 pj_ntohl(hdr->ts), payloadlen, pkt_discarded);
+ 
++    /* RTCP-FB generic NACK */
++    if (stream->rtcp.received >= 10 && seq_st.diff > 1 &&
++	stream->send_rtcp_fb_nack && pj_ntohs(hdr->seq) >= seq_st.diff)
++    {
++	int i;
++	pj_bzero(&stream->rtcp_fb_nack, sizeof(stream->rtcp_fb_nack));
++	stream->rtcp_fb_nack.pid = pj_ntohs(hdr->seq) - seq_st.diff + 1;
++	for (i = 0; i < (seq_st.diff - 1); ++i) {
++	    stream->rtcp_fb_nack.blp <<= 1;
++	    stream->rtcp_fb_nack.blp |= 1;
++	}
++
++	/* Send it immediately */
++	status = send_rtcp(stream, PJ_TRUE, PJ_FALSE, PJ_FALSE, PJ_TRUE);
++        if (status != PJ_SUCCESS) {
++            PJ_PERROR(4,(stream->port.info.name.ptr, status,
++            	      "Error sending RTCP FB generic NACK"));
++	} else {
++	    stream->initial_rr = PJ_TRUE;
++	}
++    }
++
+     /* Send RTCP RR and SDES after we receive some RTP packets */
+     if (stream->rtcp.received >= 10 && !stream->initial_rr) {
+ 	status = send_rtcp(stream, !stream->rtcp_sdes_bye_disabled,
+-			   PJ_FALSE, PJ_FALSE);
++			   PJ_FALSE, PJ_FALSE, PJ_FALSE);
+         if (status != PJ_SUCCESS) {
+             PJ_PERROR(4,(stream->port.info.name.ptr, status,
+             	     "Error sending initial RTCP RR"));
+@@ -2160,10 +2227,16 @@ PJ_DEF(pj_status_t) pjmedia_stream_create( pjmedia_endpt *endpt,
+     stream = PJ_POOL_ZALLOC_T(pool, pjmedia_stream);
+     PJ_ASSERT_RETURN(stream != NULL, PJ_ENOMEM);
+     stream->own_pool = own_pool;
++
++    /* Duplicate stream info */
+     pj_memcpy(&stream->si, info, sizeof(*info));
+     pj_strdup(pool, &stream->si.fmt.encoding_name, &info->fmt.encoding_name);
+     if (info->param)
+ 	stream->si.param = pjmedia_codec_param_clone(pool, info->param);
++    pjmedia_rtcp_fb_info_dup(pool, &stream->si.loc_rtcp_fb,
++			     &info->loc_rtcp_fb);
++    pjmedia_rtcp_fb_info_dup(pool, &stream->si.rem_rtcp_fb,
++			     &info->rem_rtcp_fb);
+ 
+     /* Init stream/port name */
+     name.ptr = (char*) pj_pool_alloc(pool, M);
+@@ -2199,6 +2272,7 @@ PJ_DEF(pj_status_t) pjmedia_stream_create( pjmedia_endpt *endpt,
+     stream->rx_event_pt = info->rx_event_pt ? info->rx_event_pt : -1;
+     stream->last_dtmf = -1;
+     stream->jb_last_frm = PJMEDIA_JB_NORMAL_FRAME;
++    stream->rtcp_fb_nack.pid = -1;
+ 
+ #if defined(PJMEDIA_STREAM_ENABLE_KA) && PJMEDIA_STREAM_ENABLE_KA!=0
+     stream->use_ka = info->use_ka;
+@@ -2590,6 +2664,25 @@ PJ_DEF(pj_status_t) pjmedia_stream_create( pjmedia_endpt *endpt,
+     }
+ #endif
+ 
++    /* Check if RTCP-FB generic NACK is enabled for this codec */
++    if (stream->si.rem_rtcp_fb.cap_count) {
++	pjmedia_rtcp_fb_info *rfi = &stream->si.rem_rtcp_fb;
++	char cid[32];
++	unsigned i;
++
++	pjmedia_codec_info_to_id(&stream->si.fmt, cid, sizeof(cid));
++
++	for (i = 0; i < rfi->cap_count; ++i) {
++	    if (rfi->caps[i].type == PJMEDIA_RTCP_FB_NACK &&
++		(!pj_strcmp2( &rfi->caps[i].codec_id, "*") ||
++		 !pj_stricmp2(&rfi->caps[i].codec_id, cid)))
++	    {
++		stream->send_rtcp_fb_nack = PJ_TRUE;
++		break;
++	    }
++	}
++    }
++
+     /* Update the stream info's codec param */
+     stream->si.param = &stream->codec_param;
+ 
+@@ -2658,7 +2751,7 @@ PJ_DEF(pj_status_t) pjmedia_stream_destroy( pjmedia_stream *stream )
+ 
+     /* Send RTCP BYE (also SDES & XR) */
+     if (!stream->rtcp_sdes_bye_disabled) {
+-	send_rtcp(stream, PJ_TRUE, PJ_TRUE, PJ_TRUE);
++	send_rtcp(stream, PJ_TRUE, PJ_TRUE, PJ_TRUE, PJ_FALSE);
+     }
+ 
+     /* If we're in the middle of transmitting DTMF digit, send one last
+@@ -3073,7 +3166,7 @@ pjmedia_stream_send_rtcp_sdes( pjmedia_stream *stream )
+ {
+     PJ_ASSERT_RETURN(stream, PJ_EINVAL);
+ 
+-    return send_rtcp(stream, PJ_TRUE, PJ_FALSE, PJ_FALSE);
++    return send_rtcp(stream, PJ_TRUE, PJ_FALSE, PJ_FALSE, PJ_FALSE);
+ }
+ 
+ /*
+@@ -3085,7 +3178,7 @@ pjmedia_stream_send_rtcp_bye( pjmedia_stream *stream )
+     PJ_ASSERT_RETURN(stream, PJ_EINVAL);
+ 
+     if (stream->enc && stream->transport) {
+-	return send_rtcp(stream, PJ_TRUE, PJ_TRUE, PJ_FALSE);
++	return send_rtcp(stream, PJ_TRUE, PJ_TRUE, PJ_FALSE, PJ_FALSE);
+     }
+ 
+     return PJ_SUCCESS;
+diff --git a/pjmedia/src/pjmedia/stream_info.c b/pjmedia/src/pjmedia/stream_info.c
+index 031b1d7..ae1467f 100644
+--- a/pjmedia/src/pjmedia/stream_info.c
++++ b/pjmedia/src/pjmedia/stream_info.c
+@@ -27,8 +27,6 @@ static const pj_str_t ID_AUDIO = { "audio", 5};
+ static const pj_str_t ID_IN = { "IN", 2 };
+ static const pj_str_t ID_IP4 = { "IP4", 3};
+ static const pj_str_t ID_IP6 = { "IP6", 3};
+-static const pj_str_t ID_RTP_AVP = { "RTP/AVP", 7 };
+-static const pj_str_t ID_RTP_SAVP = { "RTP/SAVP", 8 };
+ //static const pj_str_t ID_SDP_NAME = { "pjmedia", 7 };
+ static const pj_str_t ID_RTPMAP = { "rtpmap", 6 };
+ static const pj_str_t ID_TELEPHONE_EVENT = { "telephone-event", 15 };
+@@ -416,20 +414,12 @@ PJ_DEF(pj_status_t) pjmedia_stream_info_from_sdp(
+     if (status != PJ_SUCCESS)
+ 	return PJMEDIA_SDPNEG_EINVANSTP;
+ 
+-    if (pj_stricmp(&local_m->desc.transport, &ID_RTP_AVP) == 0) {
++    /* Get the transport protocol */
++    si->proto = pjmedia_sdp_transport_get_proto(&local_m->desc.transport);
+ 
+-	si->proto = PJMEDIA_TP_PROTO_RTP_AVP;
+-
+-    } else if (pj_stristr(&local_m->desc.transport, &ID_RTP_SAVP)) {
+-
+-	si->proto = PJMEDIA_TP_PROTO_RTP_SAVP;
+-
+-    } else {
+-
+-	si->proto = PJMEDIA_TP_PROTO_UNKNOWN;
++    /* Just return success if stream is not RTP/AVP compatible */
++    if (!PJMEDIA_TP_PROTO_HAS_FLAG(si->proto, PJMEDIA_TP_PROTO_RTP_AVP))
+ 	return PJ_SUCCESS;
+-    }
+-
+ 
+     /* Check address family in remote SDP */
+     rem_af = pj_AF_UNSPEC();
+@@ -601,6 +591,8 @@ PJ_DEF(pj_status_t) pjmedia_stream_info_from_sdp(
+ 
+     /* Get codec info and param */
+     status = get_audio_codec_info_param(si, pool, mgr, local_m, rem_m);
++    if (status != PJ_SUCCESS)
++	return status;
+ 
+     /* Leave SSRC to random. */
+     si->ssrc = pj_rand();
+@@ -608,6 +600,18 @@ PJ_DEF(pj_status_t) pjmedia_stream_info_from_sdp(
+     /* Set default jitter buffer parameter. */
+     si->jb_init = si->jb_max = si->jb_min_pre = si->jb_max_pre = -1;
+ 
++    /* Get local RTCP-FB info */
++    status = pjmedia_rtcp_fb_decode_sdp(pool, endpt, NULL, local, stream_idx,
++					&si->loc_rtcp_fb);
++    if (status != PJ_SUCCESS)
++	return status;
++
++    /* Get remote RTCP-FB info */
++    status = pjmedia_rtcp_fb_decode_sdp(pool, endpt, NULL, remote, stream_idx,
++					&si->rem_rtcp_fb);
++    if (status != PJ_SUCCESS)
++	return status;
++
+     return status;
+ }
+ 
+diff --git a/pjmedia/src/pjmedia/transport_ice.c b/pjmedia/src/pjmedia/transport_ice.c
+index d1d3f3c..55afbce 100644
+--- a/pjmedia/src/pjmedia/transport_ice.c
++++ b/pjmedia/src/pjmedia/transport_ice.c
+@@ -185,7 +185,6 @@ static pjmedia_transport_op transport_ice_op =
+     &transport_attach2
+ };
+ 
+-static const pj_str_t STR_RTP_AVP	= { "RTP/AVP", 7 };
+ static const pj_str_t STR_CANDIDATE	= { "candidate", 9};
+ static const pj_str_t STR_REM_CAND	= { "remote-candidates", 17 };
+ static const pj_str_t STR_ICE_LITE	= { "ice-lite", 8};
+@@ -1407,15 +1406,22 @@ static pj_status_t transport_encode_sdp(pjmedia_transport *tp,
+      * transport checking is disabled
+      */
+     if ((tp_ice->media_option & PJMEDIA_TPMED_NO_TRANSPORT_CHECKING) == 0) {
+-	pjmedia_sdp_media *loc_m, *rem_m;
++	pjmedia_sdp_media *m_rem, *m_loc;
++	pj_uint32_t tp_proto_loc, tp_proto_rem;
+ 
+-	rem_m = rem_sdp? rem_sdp->media[media_index] : NULL;
+-	loc_m = sdp_local->media[media_index];
++	m_rem = rem_sdp? rem_sdp->media[media_index] : NULL;
++	m_loc = sdp_local->media[media_index];
+ 
+-	if (pj_stricmp(&loc_m->desc.transport, &STR_RTP_AVP) ||
+-	   (rem_m && pj_stricmp(&rem_m->desc.transport, &STR_RTP_AVP)))
++	tp_proto_loc = pjmedia_sdp_transport_get_proto(&m_loc->desc.transport);
++	tp_proto_rem = m_rem? 
++		pjmedia_sdp_transport_get_proto(&m_rem->desc.transport) : 0;
++	PJMEDIA_TP_PROTO_TRIM_FLAG(tp_proto_loc, PJMEDIA_TP_PROFILE_RTCP_FB);
++	PJMEDIA_TP_PROTO_TRIM_FLAG(tp_proto_rem, PJMEDIA_TP_PROFILE_RTCP_FB);
++
++	if ((tp_proto_loc != PJMEDIA_TP_PROTO_RTP_AVP) ||
++	    (m_rem && tp_proto_rem != PJMEDIA_TP_PROTO_RTP_AVP))
+ 	{
+-	    pjmedia_sdp_media_deactivate(sdp_pool, loc_m);
++	    pjmedia_sdp_media_deactivate(sdp_pool, m_loc);
+ 	    return PJMEDIA_SDP_EINPROTO;
+ 	}
+     }
+@@ -1825,6 +1831,7 @@ static pj_status_t transport_attach  (pjmedia_transport *tp,
+     pj_sockaddr_cp(&param.rem_rtcp, rem_rtcp);
+     param.addr_len = addr_len;
+     param.rtp_cb = rtp_cb;
++    param.rtcp_cb = rtcp_cb;
+     return transport_attach2(tp, &param);
+ }
+ 
+diff --git a/pjmedia/src/pjmedia/transport_srtp_dtls.c b/pjmedia/src/pjmedia/transport_srtp_dtls.c
+index 32d4cf6..7104491 100644
+--- a/pjmedia/src/pjmedia/transport_srtp_dtls.c
++++ b/pjmedia/src/pjmedia/transport_srtp_dtls.c
+@@ -1047,8 +1047,11 @@ static pj_status_t dtls_media_create( pjmedia_transport *tp,
+ 	 */
+ 	pjmedia_sdp_media *m_rem = sdp_remote->media[media_index];
+ 	pjmedia_sdp_attr *attr_setup;
++	pj_uint32_t rem_proto = 0;
+ 
+-	if (pj_stricmp(&m_rem->desc.transport, &ID_TP_DTLS_SRTP)!=0) {
++	rem_proto = pjmedia_sdp_transport_get_proto(&m_rem->desc.transport);
++	if (!PJMEDIA_TP_PROTO_HAS_FLAG(rem_proto, PJMEDIA_TP_PROTO_DTLS_SRTP))
++	{
+ 	    /* Remote doesn't signal DTLS-SRTP */
+ 	    status = PJMEDIA_SRTP_ESDPINTRANSPORT;
+ 	    goto on_return;
+diff --git a/pjmedia/src/pjmedia/transport_srtp_sdes.c b/pjmedia/src/pjmedia/transport_srtp_sdes.c
+index a8d2bb2..a2e0220 100644
+--- a/pjmedia/src/pjmedia/transport_srtp_sdes.c
++++ b/pjmedia/src/pjmedia/transport_srtp_sdes.c
+@@ -273,6 +273,7 @@ static pj_status_t sdes_media_create( pjmedia_transport *tp,
+ 				      unsigned media_index)
+ {
+     struct transport_srtp *srtp = (struct transport_srtp*)tp->user_data;
++    pj_uint32_t rem_proto = 0;
+ 
+     PJ_UNUSED_ARG(options);
+     PJ_UNUSED_ARG(sdp_pool);
+@@ -280,8 +281,12 @@ static pj_status_t sdes_media_create( pjmedia_transport *tp,
+     /* Verify remote media transport, it has to be RTP/AVP or RTP/SAVP */
+     if (!srtp->offerer_side) {
+ 	pjmedia_sdp_media *m = sdp_remote->media[media_index];
+-	if (pj_stricmp(&m->desc.transport, &ID_RTP_AVP)  != 0 &&
+-	    pj_stricmp(&m->desc.transport, &ID_RTP_SAVP) != 0)
++
++	/* Get transport protocol and drop any RTCP-FB flag */
++	rem_proto = pjmedia_sdp_transport_get_proto(&m->desc.transport);
++	PJMEDIA_TP_PROTO_TRIM_FLAG(rem_proto, PJMEDIA_TP_PROFILE_RTCP_FB);
++	if (rem_proto != PJMEDIA_TP_PROTO_RTP_AVP &&
++	    rem_proto != PJMEDIA_TP_PROTO_RTP_SAVP)
+ 	{
+ 	    return PJMEDIA_SRTP_ESDPINTRANSPORT;
+ 	}
+@@ -291,18 +296,16 @@ static pj_status_t sdes_media_create( pjmedia_transport *tp,
+     if (srtp->offerer_side) {
+ 	/* As offerer: do nothing. */
+     } else {
+-	pjmedia_sdp_media *m_rem = sdp_remote->media[media_index];
+-
+ 	/* Validate remote media transport based on SRTP usage option. */
+ 	switch (srtp->setting.use) {
+ 	    case PJMEDIA_SRTP_DISABLED:
+-		if (pj_stricmp(&m_rem->desc.transport, &ID_RTP_SAVP) == 0)
++		if (rem_proto == PJMEDIA_TP_PROTO_RTP_SAVP)
+ 		    return PJMEDIA_SRTP_ESDPINTRANSPORT;
+ 		break;
+ 	    case PJMEDIA_SRTP_OPTIONAL:
+ 		break;
+ 	    case PJMEDIA_SRTP_MANDATORY:
+-		if (pj_stricmp(&m_rem->desc.transport, &ID_RTP_SAVP) != 0)
++		if (rem_proto != PJMEDIA_TP_PROTO_RTP_SAVP)
+ 		    return PJMEDIA_SRTP_ESDPINTRANSPORT;
+ 		break;
+ 	}
+@@ -333,8 +336,13 @@ static pj_status_t sdes_encode_sdp( pjmedia_transport *tp,
+     /* Verify media transport, it has to be RTP/AVP or RTP/SAVP */
+     {
+ 	pjmedia_sdp_media *m = sdp_remote? m_rem : m_loc;
+-	if (pj_stricmp(&m->desc.transport, &ID_RTP_AVP)  != 0 &&
+-	    pj_stricmp(&m->desc.transport, &ID_RTP_SAVP) != 0)
++	pj_uint32_t proto = 0;
++
++	/* Get transport protocol and drop any RTCP-FB flag */
++	proto = pjmedia_sdp_transport_get_proto(&m->desc.transport);
++	PJMEDIA_TP_PROTO_TRIM_FLAG(proto, PJMEDIA_TP_PROFILE_RTCP_FB);
++	if (proto != PJMEDIA_TP_PROTO_RTP_AVP &&
++	    proto != PJMEDIA_TP_PROTO_RTP_SAVP)
+ 	{
+ 	    return PJMEDIA_SRTP_ESDPINTRANSPORT;
+ 	}
+@@ -408,20 +416,25 @@ static pj_status_t sdes_encode_sdp( pjmedia_transport *tp,
+ 
+     } else {
+ 	/* Answerer side */
++	pj_uint32_t rem_proto = 0;
+ 
+ 	pj_assert(sdp_remote && m_rem);
+ 
++	/* Get transport protocol and drop any RTCP-FB flag */
++	rem_proto = pjmedia_sdp_transport_get_proto(&m_rem->desc.transport);
++	PJMEDIA_TP_PROTO_TRIM_FLAG(rem_proto, PJMEDIA_TP_PROFILE_RTCP_FB);
++
+ 	/* Generate transport */
+ 	switch (srtp->setting.use) {
+ 	    case PJMEDIA_SRTP_DISABLED:
+ 		/* Should never reach here */
+-		if (pj_stricmp(&m_rem->desc.transport, &ID_RTP_SAVP) == 0)
++		if (rem_proto == PJMEDIA_TP_PROTO_RTP_SAVP)
+ 		    return PJMEDIA_SRTP_ESDPINTRANSPORT;
+ 		return PJ_SUCCESS;
+ 	    case PJMEDIA_SRTP_OPTIONAL:
+ 		break;
+ 	    case PJMEDIA_SRTP_MANDATORY:
+-		if (pj_stricmp(&m_rem->desc.transport, &ID_RTP_SAVP) != 0)
++		if (rem_proto != PJMEDIA_TP_PROTO_RTP_SAVP)
+ 		    return PJMEDIA_SRTP_ESDPINTRANSPORT;
+ 		break;
+ 	}
+@@ -495,7 +508,7 @@ static pj_status_t sdes_encode_sdp( pjmedia_transport *tp,
+ 		     * - has no matching crypto
+ 		     */
+ 		    if ((!has_crypto_attr || matched_idx == -1) &&
+-			pj_stricmp(&m_rem->desc.transport, &ID_RTP_AVP) == 0)
++			rem_proto == PJMEDIA_TP_PROTO_RTP_AVP)
+ 		    {
+ 			return PJ_SUCCESS;
+ 		    }
+@@ -609,16 +622,24 @@ static pj_status_t sdes_media_start( pjmedia_transport *tp,
+     m_loc = sdp_local->media[media_index];
+ 
+     /* Verify media transport, it has to be RTP/AVP or RTP/SAVP */
+-    if (pj_stricmp(&m_rem->desc.transport, &ID_RTP_AVP)  != 0 &&
+-	pj_stricmp(&m_rem->desc.transport, &ID_RTP_SAVP) != 0)
+     {
+-	return PJMEDIA_SRTP_ESDPINTRANSPORT;
+-    }
++	pj_uint32_t rem_proto;
+ 
+-    if (pj_stricmp(&m_rem->desc.transport, &ID_RTP_SAVP) == 0)
+-	srtp->peer_use = PJMEDIA_SRTP_MANDATORY;
+-    else
+-	srtp->peer_use = PJMEDIA_SRTP_OPTIONAL;
++	/* Get transport protocol and drop any RTCP-FB flag */
++	rem_proto = pjmedia_sdp_transport_get_proto(&m_rem->desc.transport);
++	PJMEDIA_TP_PROTO_TRIM_FLAG(rem_proto, PJMEDIA_TP_PROFILE_RTCP_FB);
++	if (rem_proto != PJMEDIA_TP_PROTO_RTP_AVP &&
++	    rem_proto != PJMEDIA_TP_PROTO_RTP_SAVP)
++	{
++	    return PJMEDIA_SRTP_ESDPINTRANSPORT;
++	}
++
++	/* Also check if peer signal SRTP as mandatory */
++	if (rem_proto == PJMEDIA_TP_PROTO_RTP_SAVP)
++	    srtp->peer_use = PJMEDIA_SRTP_MANDATORY;
++	else
++	    srtp->peer_use = PJMEDIA_SRTP_OPTIONAL;
++    }
+ 
+     /* For answerer side, this function will just have to start SRTP as
+      * SRTP crypto policies have been populated in media_encode_sdp().
+@@ -646,7 +667,7 @@ static pj_status_t sdes_media_start( pjmedia_transport *tp,
+ 	//}
+ 	fill_local_crypto(srtp->pool, m_loc, loc_crypto, &loc_cryto_cnt);
+     } else if (srtp->setting.use == PJMEDIA_SRTP_MANDATORY) {
+-	if (pj_stricmp(&m_rem->desc.transport, &ID_RTP_SAVP)) {
++	if (srtp->peer_use != PJMEDIA_SRTP_MANDATORY) {
+ 	    DEACTIVATE_MEDIA(pool, m_loc);
+ 	    return PJMEDIA_SDP_EINPROTO;
+ 	}
+diff --git a/pjmedia/src/pjmedia/transport_udp.c b/pjmedia/src/pjmedia/transport_udp.c
+index 428bf1b..bbc0f88 100644
+--- a/pjmedia/src/pjmedia/transport_udp.c
++++ b/pjmedia/src/pjmedia/transport_udp.c
+@@ -37,8 +37,6 @@
+ /* Maximum pending write operations */
+ #define MAX_PENDING 4
+ 
+-static const pj_str_t ID_RTP_AVP  = { "RTP/AVP", 7 };
+-
+ /* Pending write buffer */
+ typedef struct pending_write
+ {
+@@ -1030,12 +1028,19 @@ static pj_status_t transport_encode_sdp(pjmedia_transport *tp,
+     /* By now, this transport only support RTP/AVP transport */
+     if ((udp->media_options & PJMEDIA_TPMED_NO_TRANSPORT_CHECKING) == 0) {
+ 	pjmedia_sdp_media *m_rem, *m_loc;
++	pj_uint32_t tp_proto_loc, tp_proto_rem;
+ 
+ 	m_rem = rem_sdp? rem_sdp->media[media_index] : NULL;
+ 	m_loc = sdp_local->media[media_index];
+ 
+-	if (pj_stricmp(&m_loc->desc.transport, &ID_RTP_AVP) ||
+-	   (m_rem && pj_stricmp(&m_rem->desc.transport, &ID_RTP_AVP)))
++	tp_proto_loc = pjmedia_sdp_transport_get_proto(&m_loc->desc.transport);
++	tp_proto_rem = m_rem? 
++		pjmedia_sdp_transport_get_proto(&m_rem->desc.transport) : 0;
++	PJMEDIA_TP_PROTO_TRIM_FLAG(tp_proto_loc, PJMEDIA_TP_PROFILE_RTCP_FB);
++	PJMEDIA_TP_PROTO_TRIM_FLAG(tp_proto_rem, PJMEDIA_TP_PROFILE_RTCP_FB);
++
++	if ((tp_proto_loc != PJMEDIA_TP_PROTO_RTP_AVP) ||
++	    (m_rem && tp_proto_rem != PJMEDIA_TP_PROTO_RTP_AVP))
+ 	{
+ 	    pjmedia_sdp_media_deactivate(pool, m_loc);
+ 	    return PJMEDIA_SDP_EINPROTO;
+diff --git a/pjmedia/src/pjmedia/vid_stream_info.c b/pjmedia/src/pjmedia/vid_stream_info.c
+index 15c7ea0..d425ff3 100644
+--- a/pjmedia/src/pjmedia/vid_stream_info.c
++++ b/pjmedia/src/pjmedia/vid_stream_info.c
+@@ -28,8 +28,6 @@ static const pj_str_t ID_VIDEO = { "video", 5};
+ static const pj_str_t ID_IN = { "IN", 2 };
+ static const pj_str_t ID_IP4 = { "IP4", 3};
+ static const pj_str_t ID_IP6 = { "IP6", 3};
+-static const pj_str_t ID_RTP_AVP = { "RTP/AVP", 7 };
+-static const pj_str_t ID_RTP_SAVP = { "RTP/SAVP", 8 };
+ //static const pj_str_t ID_SDP_NAME = { "pjmedia", 7 };
+ static const pj_str_t ID_RTPMAP = { "rtpmap", 6 };
+ 
+@@ -239,19 +237,12 @@ PJ_DEF(pj_status_t) pjmedia_vid_stream_info_from_sdp(
+     if (status != PJ_SUCCESS)
+ 	return PJMEDIA_SDPNEG_EINVANSTP;
+ 
+-    if (pj_stricmp(&local_m->desc.transport, &ID_RTP_AVP) == 0) {
++    /* Get the transport protocol */
++    si->proto = pjmedia_sdp_transport_get_proto(&local_m->desc.transport);
+ 
+-	si->proto = PJMEDIA_TP_PROTO_RTP_AVP;
+-
+-    } else if (pj_stristr(&local_m->desc.transport, &ID_RTP_SAVP)) {
+-
+-	si->proto = PJMEDIA_TP_PROTO_RTP_SAVP;
+-
+-    } else {
+-
+-	si->proto = PJMEDIA_TP_PROTO_UNKNOWN;
++    /* Return success if transport protocol is not RTP/AVP compatible */
++    if (!PJMEDIA_TP_PROTO_HAS_FLAG(si->proto, PJMEDIA_TP_PROTO_RTP_AVP))
+ 	return PJ_SUCCESS;
+-    }
+ 
+ 
+     /* Check address family in remote SDP */
+diff --git a/pjsip-apps/src/swig/symbols.i b/pjsip-apps/src/swig/symbols.i
+index 372489b..dd8f6b0 100644
+--- a/pjsip-apps/src/swig/symbols.i
++++ b/pjsip-apps/src/swig/symbols.i
+@@ -109,6 +109,8 @@ typedef enum pjmedia_format_id {PJMEDIA_FORMAT_L16 = 0, PJMEDIA_FORMAT_PCM = PJM
+ 
+ typedef enum pjmedia_vid_packing {PJMEDIA_VID_PACKING_UNKNOWN, PJMEDIA_VID_PACKING_PACKETS = 1, PJMEDIA_VID_PACKING_WHOLE = 2} pjmedia_vid_packing;
+ 
++typedef enum pjmedia_rtcp_fb_type {PJMEDIA_RTCP_FB_ACK, PJMEDIA_RTCP_FB_NACK, PJMEDIA_RTCP_FB_TRR_INT, PJMEDIA_RTCP_FB_OTHER} pjmedia_rtcp_fb_type;
++
+ typedef enum pjsip_cred_data_type {PJSIP_CRED_DATA_PLAIN_PASSWD = 0, PJSIP_CRED_DATA_DIGEST = 1, PJSIP_CRED_DATA_EXT_AKA = 16} pjsip_cred_data_type;
+ 
+ typedef enum pjsip_dialog_cap_status {PJSIP_DIALOG_CAP_UNSUPPORTED = 0, PJSIP_DIALOG_CAP_SUPPORTED = 1, PJSIP_DIALOG_CAP_UNKNOWN = 2} pjsip_dialog_cap_status;
+diff --git a/pjsip-apps/src/swig/symbols.lst b/pjsip-apps/src/swig/symbols.lst
+index a33b3b6..5c0ac6c 100644
+--- a/pjsip-apps/src/swig/symbols.lst
++++ b/pjsip-apps/src/swig/symbols.lst
+@@ -17,6 +17,7 @@ pjmedia/tonegen.h		pjmedia_tone_digit pjmedia_tone_digit_map pjmedia_tone_desc
+ pjmedia/types.h                 pjmedia_type pjmedia_dir pjmedia_tp_proto pjmedia_orient
+ pjmedia/format.h		pjmedia_format_id
+ pjmedia/vid_codec.h		pjmedia_vid_packing
++pjmedia/rtcp_fb.h		pjmedia_rtcp_fb_type
+ 
+ pjsip/sip_auth.h		pjsip_cred_data_type
+ pjsip/sip_dialog.h              pjsip_dialog_cap_status
+diff --git a/pjsip/include/pjsua-lib/pjsua.h b/pjsip/include/pjsua-lib/pjsua.h
+index 7cc4031..ecb3fb5 100644
+--- a/pjsip/include/pjsua-lib/pjsua.h
++++ b/pjsip/include/pjsua-lib/pjsua.h
+@@ -3912,6 +3912,11 @@ typedef struct pjsua_acc_config
+      */
+     pj_bool_t		enable_rtcp_mux;
+ 
++    /**
++     * RTCP Feedback configuration.
++     */
++    pjmedia_rtcp_fb_setting rtcp_fb_cfg;
++
+ } pjsua_acc_config;
+ 
+ 
+diff --git a/pjsip/include/pjsua2/account.hpp b/pjsip/include/pjsua2/account.hpp
+index 6bfb3d9..be14abd 100644
+--- a/pjsip/include/pjsua2/account.hpp
++++ b/pjsip/include/pjsua2/account.hpp
+@@ -737,6 +737,9 @@ public:
+ /* Array of SRTP cryptos. */
+ typedef std::vector<SrtpCrypto> SrtpCryptoVector;
+ 
++/**
++ * SRTP settings.
++ */
+ struct SrtpOpt : public PersistentObject
+ {
+     /**
+@@ -789,6 +792,109 @@ public:
+ };
+ 
+ /**
++ * RTCP Feedback capability.
++ */
++struct RtcpFbCap
++{
++    /**
++     * Specify the codecs to which the capability is applicable. Codec ID is
++     * using the same format as in pjmedia_codec_mgr_find_codecs_by_id() and
++     * pjmedia_vid_codec_mgr_find_codecs_by_id(), e.g: "L16/8000/1", "PCMU",
++     * "H264". This can also be an asterisk ("*") to represent all codecs.
++     */
++    string		    codecId;
++
++    /**
++     * Specify the RTCP Feedback type.
++     */
++    pjmedia_rtcp_fb_type    type;
++
++    /**
++     * Specify the type name if RTCP Feedback type is PJMEDIA_RTCP_FB_OTHER.
++     */
++    string		    typeName;
++
++    /**
++     * Specify the RTCP Feedback parameters.
++     */
++    string		    param;
++
++public:
++    /**
++     * Constructor.
++     */
++    RtcpFbCap() : type(PJMEDIA_RTCP_FB_OTHER)
++    {}
++
++    /**
++     * Convert from pjsip
++     */
++    void fromPj(const pjmedia_rtcp_fb_cap &prm);
++
++    /**
++     * Convert to pjsip
++     */
++    pjmedia_rtcp_fb_cap toPj() const;
++};
++
++/* Array of RTCP Feedback capabilities. */
++typedef std::vector<RtcpFbCap> RtcpFbCapVector;
++
++
++/**
++ * RTCP Feedback settings.
++ */
++struct RtcpFbConfig : public PersistentObject
++{
++    /**
++     * Specify whether transport protocol in SDP media description uses
++     * RTP/AVP instead of RTP/AVPF. Note that the standard mandates to signal
++     * AVPF profile, but it may cause SDP negotiation failure when negotiating
++     * with endpoints that does not support RTCP Feedback (including older
++     * version of PJSIP).
++     *
++     * Default: false.
++     */
++    bool		    dontUseAvpf;
++
++    /**
++     * RTCP Feedback capabilities.
++     */
++    RtcpFbCapVector	    caps;
++
++public:
++    /**
++     * Constructor.
++     */
++    RtcpFbConfig();
++
++    /**
++     * Convert from pjsip
++     */
++    void fromPj(const pjmedia_rtcp_fb_setting &prm);
++
++    /**
++     * Convert to pjsip
++     */
++    pjmedia_rtcp_fb_setting toPj() const;
++
++public:
++    /**
++     * Read this object from a container node.
++     *
++     * @param node		Container to read values from.
++     */
++    virtual void readObject(const ContainerNode &node) throw(Error);
++
++    /**
++     * Write this object to a container node.
++     *
++     * @param node		Container to write values to.
++     */
++    virtual void writeObject(ContainerNode &node) const throw(Error);
++};
++
++/**
+  * Account media config (applicable for both audio and video). This will be
+  * specified in AccountConfig.
+  */
+@@ -854,6 +960,11 @@ struct AccountMediaConfig : public PersistentObject
+      */
+     bool		rtcpMuxEnabled;
+ 
++    /**
++     * RTCP Feedback settings.
++     */
++    RtcpFbConfig	rtcpFbConfig;
++
+ public:
+     /**
+      * Read this object from a container node.
+diff --git a/pjsip/src/pjsua-lib/pjsua_acc.c b/pjsip/src/pjsua-lib/pjsua_acc.c
+index 440c375..e46f9df 100644
+--- a/pjsip/src/pjsua-lib/pjsua_acc.c
++++ b/pjsip/src/pjsua-lib/pjsua_acc.c
+@@ -140,6 +140,8 @@ PJ_DEF(void) pjsua_acc_config_dup( pj_pool_t *pool,
+     pjsua_turn_config_dup(pool, &dst->turn_cfg, &src->turn_cfg);
+ 
+     pj_strdup(pool, &dst->ka_data, &src->ka_data);
++
++    pjmedia_rtcp_fb_setting_dup(pool, &dst->rtcp_fb_cfg, &src->rtcp_fb_cfg);
+ }
+ 
+ /*
+@@ -1433,6 +1435,10 @@ PJ_DEF(pj_status_t) pjsua_acc_modify( pjsua_acc_id acc_id,
+     acc->cfg.ip_change_cfg.hangup_calls = cfg->ip_change_cfg.hangup_calls;    
+     acc->cfg.ip_change_cfg.reinvite_flags = cfg->ip_change_cfg.reinvite_flags;
+ 
++    /* RTCP-FB config */
++    pjmedia_rtcp_fb_setting_dup(acc->pool, &acc->cfg.rtcp_fb_cfg,
++				&cfg->rtcp_fb_cfg);
++
+ on_return:
+     PJSUA_UNLOCK();
+     pj_log_pop_indent();
+diff --git a/pjsip/src/pjsua-lib/pjsua_core.c b/pjsip/src/pjsua-lib/pjsua_core.c
+index 2bb0d60..66c5843 100644
+--- a/pjsip/src/pjsua-lib/pjsua_core.c
++++ b/pjsip/src/pjsua-lib/pjsua_core.c
+@@ -291,6 +291,7 @@ PJ_DEF(void) pjsua_acc_config_default(pjsua_acc_config *cfg)
+ #endif
+     pjsua_transport_config_default(&cfg->rtp_cfg);
+     cfg->rtp_cfg.port = DEFAULT_RTP_PORT;
++    pjmedia_rtcp_fb_setting_default(&cfg->rtcp_fb_cfg);
+ 
+     pjsua_media_config_default(&med_cfg);
+     pjsua_ice_config_from_media_config(NULL, &cfg->ice_cfg, &med_cfg);
+diff --git a/pjsip/src/pjsua-lib/pjsua_media.c b/pjsip/src/pjsua-lib/pjsua_media.c
+index e3931a3..422dfa2 100644
+--- a/pjsip/src/pjsua-lib/pjsua_media.c
++++ b/pjsip/src/pjsua-lib/pjsua_media.c
+@@ -2257,6 +2257,7 @@ pj_status_t pjsua_media_channel_create_sdp(pjsua_call_id call_id,
+     pjmedia_sdp_session *sdp;
+     pj_sockaddr origin;
+     pjsua_call *call = &pjsua_var.calls[call_id];
++    pjsua_acc *acc = &pjsua_var.acc[call->acc_id];
+     pjmedia_sdp_neg_state sdp_neg_state = PJMEDIA_SDP_NEG_STATE_NULL;
+     unsigned mi;
+     unsigned tot_bandw_tias = 0;
+@@ -2483,6 +2484,19 @@ pj_status_t pjsua_media_channel_create_sdp(pjsua_call_id call_id,
+ 		break;
+ 	    }
+ 	}
++
++	/* Add RTCP-FB info in SDP if we are offerer */
++	if (rem_sdp == NULL && acc->cfg.rtcp_fb_cfg.cap_count) {
++	    status = pjmedia_rtcp_fb_encode_sdp(pool, pjsua_var.med_endpt,
++						&acc->cfg.rtcp_fb_cfg, sdp,
++						mi, rem_sdp);
++	    if (status != PJ_SUCCESS) {
++		PJ_PERROR(3,(THIS_FILE, status,
++			     "Call %d media %d: Failed to encode RTCP-FB "
++			     "setting to SDP",
++			     call_id, mi));
++	    }
++	}
+     }
+ 
+     /* Add NAT info in the SDP */
+@@ -2529,7 +2543,6 @@ pj_status_t pjsua_media_channel_create_sdp(pjsua_call_id call_id,
+ 	sdp->bandw[sdp->bandw_count++] = b;
+     }
+ 
+-
+ #if DISABLED_FOR_TICKET_1185 && defined(PJMEDIA_HAS_SRTP) && (PJMEDIA_HAS_SRTP != 0)
+     /* Check if SRTP is in optional mode and configured to use duplicated
+      * media, i.e: secured and unsecured version, in the SDP offer.
+@@ -2960,34 +2973,60 @@ pj_status_t pjsua_media_channel_update(pjsua_call_id call_id,
+     mvidcnt = mtotvidcnt = 0;
+ #endif
+ 
+-    /* Applying media count limitation. Note that in generating SDP answer,
+-     * no media count limitation applied, as we didn't know yet which media
+-     * would pass the SDP negotiation.
++    /* We need to re-nego SDP or modify our answer when:
++     * - media count exceeds the configured limit,
++     * - RTCP-FB is enabled (so a=rtcp-fb will only be printed for negotiated
++     *   codecs)
+      */
+-    if (maudcnt > call->opt.aud_cnt || mvidcnt > call->opt.vid_cnt)
++    if (!pjmedia_sdp_neg_was_answer_remote(call->inv->neg) &&
++	((maudcnt > call->opt.aud_cnt || mvidcnt > call->opt.vid_cnt) ||
++	(acc->cfg.rtcp_fb_cfg.cap_count)))
+     {
+-	pjmedia_sdp_session *local_sdp2;
++	pjmedia_sdp_session *local_sdp_renego = NULL;
+ 
+-	maudcnt = PJ_MIN(maudcnt, call->opt.aud_cnt);
+-	mvidcnt = PJ_MIN(mvidcnt, call->opt.vid_cnt);
+-	local_sdp2 = pjmedia_sdp_session_clone(tmp_pool, local_sdp);
+-
+-	for (mi=0; mi < local_sdp2->media_count; ++mi) {
+-	    pjmedia_sdp_media *m = local_sdp2->media[mi];
++	local_sdp_renego = pjmedia_sdp_session_clone(tmp_pool, local_sdp);
++	local_sdp = local_sdp_renego;
++	need_renego_sdp = PJ_TRUE;
+ 
+-	    if (m->desc.port == 0 ||
+-		pj_memchr(maudidx, mi, maudcnt*sizeof(maudidx[0])) ||
+-		pj_memchr(mvididx, mi, mvidcnt*sizeof(mvididx[0])))
+-	    {
+-		continue;
++	/* Add RTCP-FB info into local SDP answer */
++	if (acc->cfg.rtcp_fb_cfg.cap_count) {
++	    for (mi=0; mi < local_sdp_renego->media_count; ++mi) {
++		status = pjmedia_rtcp_fb_encode_sdp(
++					tmp_pool, pjsua_var.med_endpt,
++					&acc->cfg.rtcp_fb_cfg,
++					local_sdp_renego, mi, remote_sdp);
++		if (status != PJ_SUCCESS) {
++		    PJ_PERROR(3,(THIS_FILE, status,
++				 "Call %d media %d: Failed to encode RTCP-FB "
++				 "setting to SDP",
++				 call_id, mi));
++		}
+ 	    }
+-	    
+-	    /* Deactivate this media */
+-	    pjmedia_sdp_media_deactivate(tmp_pool, m);
+ 	}
+ 
+-	local_sdp = local_sdp2;
+-	need_renego_sdp = PJ_TRUE;
++	/* Applying media count limitation. Note that in generating SDP
++	 * answer, no media count limitation applied as we didn't know yet
++	 * which media would pass the SDP negotiation.
++	 */
++	if (maudcnt > call->opt.aud_cnt || mvidcnt > call->opt.vid_cnt)
++	{
++	    maudcnt = PJ_MIN(maudcnt, call->opt.aud_cnt);
++	    mvidcnt = PJ_MIN(mvidcnt, call->opt.vid_cnt);
++
++	    for (mi=0; mi < local_sdp_renego->media_count; ++mi) {
++		pjmedia_sdp_media *m = local_sdp_renego->media[mi];
++
++		if (m->desc.port == 0 ||
++		    pj_memchr(maudidx, mi, maudcnt*sizeof(maudidx[0])) ||
++		    pj_memchr(mvididx, mi, mvidcnt*sizeof(mvididx[0])))
++		{
++		    continue;
++		}
++    	    
++		/* Deactivate this excess media */
++		pjmedia_sdp_media_deactivate(tmp_pool, m);
++	    }
++	}
+     }
+ 
+     /* Process each media stream */
+@@ -3388,16 +3427,10 @@ on_check_med_status:
+     pj_memcpy(call->media, call->media_prov,
+ 	      sizeof(call->media_prov[0]) * call->med_prov_cnt);
+ 
+-    /* Perform SDP re-negotiation if some media have just got disabled
+-     * in this function due to media count limit settings.
+-     */
++    /* Perform SDP re-negotiation. */
+     if (got_media && need_renego_sdp) {
+ 	pjmedia_sdp_neg *neg = call->inv->neg;
+ 
+-	/* This should only happen when we are the answerer. */
+-	PJ_ASSERT_RETURN(neg && !pjmedia_sdp_neg_was_answer_remote(neg),
+-			 PJMEDIA_SDPNEG_EINSTATE);
+-	
+ 	status = pjmedia_sdp_neg_set_remote_offer(tmp_pool, neg, remote_sdp);
+ 	if (status != PJ_SUCCESS)
+ 	    goto on_error;
+diff --git a/pjsip/src/pjsua2/account.cpp b/pjsip/src/pjsua2/account.cpp
+index 895949f..269e2e0 100644
+--- a/pjsip/src/pjsua2/account.cpp
++++ b/pjsip/src/pjsua2/account.cpp
+@@ -29,6 +29,95 @@ using namespace std;
+ 
+ ///////////////////////////////////////////////////////////////////////////////
+ 
++void RtcpFbCap::fromPj(const pjmedia_rtcp_fb_cap &prm)
++{
++    this->codecId   = pj2Str(prm.codec_id);
++    this->type	    = prm.type;
++    this->typeName  = pj2Str(prm.type_name);
++    this->param	    = pj2Str(prm.param);
++}
++
++pjmedia_rtcp_fb_cap RtcpFbCap::toPj() const
++{
++    pjmedia_rtcp_fb_cap cap;
++
++    pj_bzero(&cap, sizeof(cap));
++    cap.codec_id    = str2Pj(this->codecId);
++    cap.type	    = this->type;
++    cap.type_name   = str2Pj(this->typeName);
++    cap.param	    = str2Pj(this->param);
++
++    return cap;
++}
++
++///////////////////////////////////////////////////////////////////////////////
++
++RtcpFbConfig::RtcpFbConfig()
++{
++    pjmedia_rtcp_fb_setting setting;
++    pjmedia_rtcp_fb_setting_default(&setting);
++    fromPj(setting);
++}
++
++void RtcpFbConfig::fromPj(const pjmedia_rtcp_fb_setting &prm)
++{
++    this->dontUseAvpf = PJ2BOOL(prm.dont_use_avpf);
++    this->caps.clear();
++    for (unsigned i = 0; i < prm.cap_count; ++i) {
++	RtcpFbCap cap;
++	cap.fromPj(prm.caps[i]);
++	this->caps.push_back(cap);
++    }
++}
++
++pjmedia_rtcp_fb_setting RtcpFbConfig::toPj() const
++{
++    pjmedia_rtcp_fb_setting setting;
++
++    pj_bzero(&setting, sizeof(setting));
++    setting.dont_use_avpf   = this->dontUseAvpf;
++    setting.cap_count	    = this->caps.size();
++    for (unsigned i = 0; i < setting.cap_count; ++i) {
++	setting.caps[i] = this->caps[i].toPj();
++    }
++
++    return setting;
++}
++
++void RtcpFbConfig::readObject(const ContainerNode &node) throw(Error)
++{
++    ContainerNode this_node = node.readContainer("RtcpFbConfig");
++    NODE_READ_BOOL	(this_node, dontUseAvpf);
++
++    ContainerNode cap_node = this_node.readArray("caps");
++    this->caps.clear();
++    while (cap_node.hasUnread()) {
++	RtcpFbCap cap;
++	NODE_READ_STRING	(cap_node, cap.codecId);
++	NODE_READ_NUM_T		(cap_node, pjmedia_rtcp_fb_type, cap.type);
++	NODE_READ_STRING	(cap_node, cap.typeName);
++	NODE_READ_STRING	(cap_node, cap.param);
++	this->caps.push_back(cap);
++    }
++}
++
++void RtcpFbConfig::writeObject(ContainerNode &node) const throw(Error)
++{
++    ContainerNode this_node = node.writeNewContainer("RtcpFbConfig");
++    NODE_WRITE_BOOL	(this_node, dontUseAvpf);
++
++    ContainerNode cap_node = this_node.writeNewArray("caps");
++    for (unsigned i=0; i<this->caps.size(); ++i) {
++	NODE_WRITE_STRING	(cap_node, this->caps[i].codecId);
++	NODE_WRITE_NUM_T	(cap_node, pjmedia_rtcp_fb_type,
++				 this->caps[i].type);
++	NODE_WRITE_STRING	(cap_node, this->caps[i].typeName);
++	NODE_WRITE_STRING	(cap_node, this->caps[i].param);
++    }
++}
++
++///////////////////////////////////////////////////////////////////////////////
++
+ void SrtpCrypto::fromPj(const pjmedia_srtp_crypto &prm)
+ {
+     this->key	    = pj2Str(prm.key);

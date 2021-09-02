@@ -1,0 +1,7 @@
+commit f04ffdddbb02b9d3e0ec000c20c76eddfbed55b9
+Author: Benny Prijono <bennylp@teluu.com>
+Date:   Tue Feb 21 00:11:18 2006 +0000
+
+    Initial conference implementation
+    
+    git-svn-id: https://svn.pjsip.org/repos/pjproject/trunk@205 74dad513-b988-da41-8d7b-12977e46ad98

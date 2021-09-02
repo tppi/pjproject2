@@ -1,0 +1,7 @@
+git checkout dd627bc80966aa3a997538f05b763dd269b3f163
+
+git diff HEAD~ HEAD > timer.patch
+
+git diff HEAD~ HEAD --name-only > timer.1
+
+git diff HEAD~ HEAD --name-only | xargs zip update.zip

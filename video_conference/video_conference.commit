@@ -1,0 +1,5 @@
+commit eafc04d5bfa946943f6169e888160cb42c976eac
+Author: Nanang Izzuddin <nanang@teluu.com>
+Date:   Tue Mar 5 06:23:02 2019 +0000
+
+    Re #2181: Initial version of video conference implementation. 

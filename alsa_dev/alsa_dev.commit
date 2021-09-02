@@ -1,0 +1,17 @@
+commit eeca9e82e7c36aa13f9d1b843231fadab6884b70
+Author: Nanang Izzuddin <nanang@teluu.com>
+Date:   Tue Nov 10 10:36:14 2015 +0000
+
+    Re #1896: Updated default audio device backends: mingw uses WMME, linux/*nix uses alsa (if available).
+    
+    
+    git-svn-id: https://svn.pjsip.org/repos/pjproject/trunk@5199 74dad513-b988-da41-8d7b-12977e46ad98
+
+commit 19a87c7a0816d47fed3c19befcf05871c0b9cf38
+Author: Benny Prijono <bennylp@teluu.com>
+Date:   Wed Jan 27 17:22:17 2010 +0000
+
+    Initial implementation of ticket #1016: Native Linux ALSA audio device backend implementation
+    
+    
+    git-svn-id: https://svn.pjsip.org/repos/pjproject/trunk@3079 74dad513-b988-da41-8d7b-12977e46ad98

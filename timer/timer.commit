@@ -1,0 +1,5 @@
+commit dd627bc80966aa3a997538f05b763dd269b3f163
+Author: Riza Sulistyo <riza@teluu.com>
+Date:   Wed Nov 6 06:17:53 2019 +0000
+
+    Close #2249: Use sorted linked list for timer implementation.

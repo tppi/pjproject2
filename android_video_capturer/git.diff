@@ -1,0 +1,7 @@
+git checkout b5ab265a3c7445035ff5838d3ca4600fced77556
+
+git diff HEAD~ HEAD > android_video_capturer.patch
+
+git diff HEAD~ HEAD --name-only > android_video_capturer.1
+
+git diff HEAD~ HEAD --name-only | xargs zip update.zip

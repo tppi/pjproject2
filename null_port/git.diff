@@ -1,0 +1,12 @@
+git checkout de38058342475de87d768deab702ae67dae879c7
+
+git diff HEAD~ HEAD > null_port.patch
+
+git diff HEAD~ HEAD --name-only > null_port.1
+
+git diff HEAD~ HEAD --name-only | xargs zip update.zip
+
+
+
+
+

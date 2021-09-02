@@ -1,0 +1,15 @@
+commit d91af57b3815a9ed92148df2e45f5d59a0c349e8
+Author: Nanang Izzuddin <nanang@teluu.com>
+Date:   Thu Mar 31 17:29:54 2011 +0000
+
+    Re #1219:
+     - Initial version of H264 implementation (codec & packetization).
+     - Added vid_codec_util.h/c for video codec utilities (e.g: fmtp parser).
+     - Updated video RTP packetizations to be configurable and have internal state (to be more resilient to packet lost, etc).
+     - Fixed wrong SPF calculation in PJMEDIA_SPF2.
+     - Updated vid_codec_test.c to also have RTP packetization test.
+     - Updated sdp_neg.c to verify H.264 capability match.
+    
+    
+    
+    git-svn-id: https://svn.pjsip.org/repos/pjproject/branches/projects/2.0-dev@3493 74dad513-b988-da41-8d7b-12977e46ad98
